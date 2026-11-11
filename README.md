@@ -1,78 +1,121 @@
 # Finance Pulse Analytics: Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform
 
-**Finance Pulse Analytics** is a local-first enterprise financial performance intelligence and profitability optimization analytics platform spanning **macOS**, **Windows**, and **Android**. Ingestion, dimensional profitability slicing, explainable IQR anomaly detection, regression forecasting, target-margin optimization, governance logging, and PDF/CSV reporting execute locally without external cloud dependencies.
+[![Platform: macOS | Windows | Android](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Android-brightgreen.svg)]()
+[![Python: 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)]()
+[![UI: PyWebView + Android APK](https://img.shields.io/badge/UI-Desktop%20%7C%20Web%20%7C%20Android%20APK-orange.svg)]()
+[![Privacy: 100% Local](https://img.shields.io/badge/Privacy-100%25%20Local%20%7C%20No%20Cloud-success.svg)]()
+[![GitHub release](https://img.shields.io/github/v/release/yudhaxibe-hue/Finance-Pulse-Analytics?include_prereleases&color=success&label=Latest%20Release)](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/latest)
 
-## Platform Highlights
+A local-first enterprise financial performance intelligence and profitability optimization analytics workbench combining **3-Pillar Narrative Briefs (`01 · What it is` · `02 · What happened` · `03 · What could have happened`)**, **Switchable Offline Charts**, **Explainable IQR Outlier Surveillance**, **Linear Regression Forecasting**, **Target-Margin Optimization**, and **Role-Isolated Governance** across **macOS**, **Windows**, **Web**, and **Android**.
 
-- **3-Pillar Narrative Intelligence Briefs & Interactive Charts:** Every analytics view opens with a crisp executive narrative (`01 · What it is` · `02 · What happened` · `03 · What could have happened`) followed by multi-mode visualizations (bar/line combos, horizontal margin rankings, profit-share doughnuts, variance vs. cutoff comparisons, and regression projection plots).
-- **Workspace-Isolated User Portal & Admin Governance Portal:** Separate registration/login flows, persistent session secrets (`.flask_secret` or `FINANCE_PULSE_SECRET_KEY`), PBKDF2-SHA256 password hashing, user active/suspended governance (`/admin/users`), threshold controls, and filterable Admin **Audit Logs** (`/admin/audit`).
-- **Resilient CSV, XLSX & JSON Import:** Automatic header alias detection (`Sales Date`, `COGS`, `Dept`, etc.), data quality auditing, 8-row staging preview before commit, and imported dataset history.
-- **Target-Margin Optimization Solver & What-If Simulator:** Break-even revenue floor calculation, solved required expense-cut or revenue-lift presets, ranked segment profit levers across Product, Department, Category, and Region, interactive sliders, and saved scenario comparisons.
-- **Native Desktop Packaging (macOS & Windows):** Embedded Flask server on ephemeral loopback `127.0.0.1`, `/health` readiness check, and native PyWebView window via [`app_launcher.py`](app_launcher.py) (with browser fallback and download support).
-- **Standalone Android APK (`android/`):** Purpose-built mobile interface with bottom navigation, offline JavaScript analytics engine (`Chart.js` + bundled sample CSV + CSV/JSON upload & export), and an optional Settings bridge (`FINANCE_PULSE_REMOTE_URL` / live Flask URL) to connect to a hosted server.
+---
 
-## 1-Click Quick Start
+# 💾 INSTALLATION & 1-CLICK QUICK RUN
 
-### Option A · Pre-Built Releases (No Python Required)
-Download the latest automated build from **GitHub Releases**:
-- **macOS:** `FinancePulseAnalytics-macOS-unsigned.zip` — unzip and open `FinancePulseAnalytics.app`.
-- **Windows:** `FinancePulseAnalytics-Windows-unsigned.zip` — unzip and run `FinancePulseAnalytics.exe`.
-- **Android:** `FinancePulseAnalytics-Android.apk` — install directly on Android 8.0+ devices (`minSdk 26`, `targetSdk 34`).
+> ### 🎓 For Evaluators, Teams & Quick Testing (Zero Setup Required)
+> **You do NOT need to clone this repository, use the terminal, or install Python to evaluate Finance Pulse Analytics.**
+> Simply download the package for your device below, unzip (for desktop), and launch.
 
-### Option B · 1-Click Source Launchers
-- **macOS:** Double-click `Run_FinancePulse_Mac.command` in Finder.
-- **Windows:** Double-click `Run_FinancePulse_Windows.bat` in Explorer.
+| Operating System | Direct 1-Click Download | How to Run |
+| :--- | :--- | :--- |
+| **🪟 Windows 10 / 11** | [**📥 Download for Windows (.zip)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/download/v1.0.0/FinancePulseAnalytics-Windows-unsigned.zip) | **1.** Extract the downloaded `.zip` folder.<br>**2.** Double-click **`FinancePulseAnalytics.exe`**.<br>*Opens natively without terminal windows or Python setup.* |
+| **🍎 macOS (Apple Silicon & Intel)** | [**📥 Download for macOS (.zip)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/download/v1.0.0/FinancePulseAnalytics-macOS-unsigned.zip) | **1.** Extract the `.zip` archive.<br>**2.** Open **`FinancePulseAnalytics.app`**.<br>*(First launch of an unsigned build: right-click -> **Open**).* |
+| **🤖 Android (8.0+ / SDK 26–34)** | [**📥 Download Android APK (.apk)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/download/v1.0.0/FinancePulseAnalytics-Android.apk) | **1.** Open **`FinancePulseAnalytics-Android.apk`** on Android.<br>**2.** Runs 100% offline with bundled Chart.js & sample CSV (or link to a hosted server under **Settings**). |
+| **📦 GitHub Releases Hub** | [**🔗 View All Releases & SHA-256 Checksums**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/latest) | Official release artifacts with SHA-256 checksums built automatically by GitHub Actions. |
 
-### Option C · Manual Developer Setup (Web UI)
+---
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python app.py
+### 📂 Alternative: 1-Click Run Directly From Cloned Source
+If you cloned or downloaded the source code from GitHub:
+- **On macOS:** Double-click **`Run_FinancePulse_Mac.command`** in Finder.
+- **On Windows:** Double-click **`Run_FinancePulse_Windows.bat`** in File Explorer.
+
+The launcher automatically initializes `.venv` on first launch, verifies dependencies from `requirements-desktop.txt`, polls `/health` readiness on loopback `127.0.0.1`, and opens a native desktop window (with clean browser fallback if native webview runtimes are unavailable).
+
+---
+
+## 📚 Project Documentation & Architecture Links (Visible Inside GitHub)
+
+| Resource | Description | Link |
+| :--- | :--- | :--- |
+| **User & Architecture Guide** | Complete installation, formulas, portal security, Android offline engine & testing manual (readable directly in GitHub). | [**`docs/USER_AND_ARCHITECTURE_GUIDE.md`**](docs/USER_AND_ARCHITECTURE_GUIDE.md) |
+| **Executive Presentation Deck** | 12-slide presentation covering pipeline design, screenshots, packaging, and CI/CD (`.pptx`). | [**`docs/Finance_Pulse_Analytics_Presentation.pptx`**](docs/Finance_Pulse_Analytics_Presentation.pptx) |
+| **Product & Analytics Spec** | Core user workflows, KPI definitions, optimization solver, and admin governance spec. | [**`PRODUCT.md`**](PRODUCT.md) |
+| **Design System Reference** | Apple Precision Ledger visual tokens, typography, and component standards. | [**`DESIGN.md`**](DESIGN.md) |
+| **CI/CD Release Pipeline** | Multi-OS GitHub Actions workflow building macOS `.app`, Windows `.exe`, and Android `.apk`. | [**`.github/workflows/ci.yml`**](.github/workflows/ci.yml) |
+
+---
+
+## ⏱️ 60-Second Evaluation & Walkthrough Guide
+
+1. **Launch:** Open `FinancePulseAnalytics.app` / `FinancePulseAnalytics.exe` (or visit `http://127.0.0.1:5000` in source mode).
+2. **Explore Landing Preview:** Toggle **Monthly pulse**, **Profitability**, and **Forecast** right inside the interactive 30-month hero showcase, or click **Create account** / **Download sample CSV**.
+3. **Import Dataset:** Sign in to the User Portal, open **Import & My Data**, upload the sample CSV (or any CSV/XLSX/JSON file up to 16 MB), review the **Detected column mapping** staging preview, and confirm commit.
+4. **Inspect Narrative-First Intelligence:** On **Dashboard**, **Overview**, **Products / Departments / Categories / Regions**, **Potential Anomalies**, and **Forecasting**, read the 3-pillar brief (**01 · What it is** -> **02 · What happened** -> **03 · What could have happened**) positioned directly before every Chart.js toggle (`Trajectory`, `Margin %`, `Revenue vs. Profit`, `Profit share`).
+5. **Solve Target Margins & Simulate Scenarios:** Under **What-if & Optimization**, enter a desired Target Margin % (e.g., `45%`), load the calculated expense-cut or revenue-lift preset into the interactive sliders, inspect ranked 4D segment profit levers, and save named scenarios.
+6. **Export Reports:** Click **Export CSV** or **Export PDF** for formatted A4 ReportLab executive summaries.
+
+---
+
+## 1. Repository Structure
+
+```text
+Finance-Pulse-Analytics/
+├── .github/workflows/ci.yml      # Automated macOS, Windows & Android CI/CD release pipeline
+├── Run_FinancePulse_Mac.command  # 1-Click macOS Finder desktop launcher
+├── Run_FinancePulse_Windows.bat  # 1-Click Windows Explorer desktop launcher
+├── app.py                        # Flask application, RBAC portals, exports & /health check
+├── app_launcher.py               # Loopback PyWebView shell, --admin, --create-admin & --remote-url
+├── config.py                     # OS writable DATA_DIR & PyInstaller bundle path resolver
+├── analytics/                    # Core engines: metrics, profitability, anomalies, forecasting, solver, narratives
+├── database/                     # SQLite schema & workspace-isolated queries + audit trail
+├── data/                         # CSV/XLSX/JSON auto-aliasing importer & bundled 120-row sample CSV
+├── packaging/                    # Brand icon generator (.icns/.ico/mipmaps) & PyInstaller macOS/Windows specs
+├── android/                      # Gradle project + WebView shell + offline JS analytics engine + JUnit tests
+├── docs/                         # User/Architecture Markdown guide + 12-slide presentation deck (.pptx)
+├── static/ & templates/          # Local Chart.js & Apple Precision Ledger web UI templates
+└── tests/                        # Unit & end-to-end Flask + desktop launcher test suite
 ```
 
-Open `http://127.0.0.1:5000`. Download the bundled sample CSV from **Import & My Data** to exercise all analytics modules immediately. `finance_pulse.db` initializes automatically inside the writable data directory (`FINANCE_PULSE_DATA_DIR` or OS application-data folder when packaged).
+---
 
-## Creating an Administrator & Hosted Server Tracking
+## 2. Advanced Developer Setup, Admin Controls & Tests
 
-By default, every desktop or Android install stores its SQLite/local database strictly on the user's own device (no telemetry or central tracking server). If you deploy the Flask backend on a central web host for multi-user access, you can point a private Admin desktop session to that host via:
+### Manual Python Setup
+```bash
+git clone https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics.git
+cd Finance-Pulse-Analytics
+
+python3 -m venv .venv
+source .venv/bin/activate        # On Windows: .venv\Scripts\activate
+pip install -r requirements-desktop.txt
+
+python app.py                    # Web server mode -> http://127.0.0.1:5000
+# Or run standalone native desktop window:
+python -m app_launcher
+```
+
+### Administrator Provisioning & Server Mode
+Every client desktop/APK installation stores its SQLite database locally on that user's own device without telemetry. When deploying the backend on a shared server for centralized administration:
 
 ```bash
+# Create/update a local administrator account cleanly via CLI
+python -m app_launcher --create-admin --admin-email admin@example.com
+
+# Or set environment variables before running app.py:
+export FINANCE_PULSE_SECRET_KEY="replace-with-a-long-random-value"
+export FINANCE_PULSE_ADMIN_EMAIL="admin@example.com"
+export FINANCE_PULSE_ADMIN_PASSWORD="use-a-strong-password"
+
+# Launch desktop shell connected to a remote hosted Flask server:
 python -m app_launcher --admin --remote-url https://your-finance-server.example.com
 ```
 
-For local administrator initialization before launching:
-
+### Automated Verification
 ```bash
-python -m app_launcher --create-admin --admin-email admin@example.com
-```
+# Python unit + end-to-end Flask & launcher tests (15/15)
+python -m pytest tests/ -v
 
-Or via environment variables (`FINANCE_PULSE_SECRET_KEY`, `FINANCE_PULSE_ADMIN_EMAIL`, `FINANCE_PULSE_ADMIN_PASSWORD`) before running `python app.py`.
-
-## Building Distributables Locally
-
-### Desktop Bundles (PyInstaller)
-
-```bash
-pip install -r requirements-desktop.txt
-python packaging/generate_icons.py --android
-# macOS
-pyinstaller packaging/macos/finance_pulse_macos.spec --noconfirm
-# Windows
-pyinstaller packaging/windows/finance_pulse_windows.spec --noconfirm
-```
-
-### Android APK (Gradle Wrapper + JDK 17)
-
-```bash
-cd android
-./gradlew testDebugUnitTest assembleDebug --no-daemon
-```
-
-## Automated Tests
-
-```bash
-.venv/bin/python -m unittest discover -s tests -v
-cd android && ./gradlew testDebugUnitTest --no-daemon
+# Android JUnit & debug APK build (JDK 17 + Android SDK 34)
+cd android && ./gradlew testDebugUnitTest assembleDebug --no-daemon
 ```

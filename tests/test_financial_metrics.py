@@ -1,8 +1,13 @@
 import io
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 import pandas as pd
 from werkzeug.security import generate_password_hash
@@ -305,7 +310,7 @@ class EndToEndWorkflowTests(IsolatedDBTestCase):
         users_page = admin_client.get("/admin/users")
         self.assertEqual(users_page.status_code, 200)
         # 2 datasets and 7 total records (not 2*7 = 14)
-        self.assertIn(b"<td>2</td><td>7</td>", users_page.data.replace(b"\n", b"").replace(b" ", b""))
+        self.assertIn(b"<td>2</td><td>7</td>", users_page.data.replace(b"\r", b"").replace(b"\n", b"").replace(b" ", b""))
 
         # Admin settings validation rejects bad values and persists valid ones
         bad_settings = admin_client.post(

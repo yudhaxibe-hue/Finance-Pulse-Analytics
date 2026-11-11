@@ -74,6 +74,8 @@ class FlaskServerThread(threading.Thread):
         try:
             self.server.shutdown()
             self.server.server_close()
+            if self.is_alive():
+                self.join(timeout=3.0)
         except Exception:
             pass
 
