@@ -272,6 +272,44 @@ class TestImporterAndUpdaterAndLauncherEdgeCases:
         assert app_launcher.create_admin_account_cli("cliadmin@test.local", "StrongPass123", "CLI Admin") == 0
         assert app_launcher.create_admin_account_cli("cliadmin@test.local", "StrongPass456", "CLI Admin v2") == 0
 
+    def test_windows_chromium_app_window_fallback(self, isolated_env, monkeypatch, tmp_path):
+        fake_edge = tmp_path / "Microsoft" / "Edge" / "Application" / "msedge.exe"
+        fake_edge.parent.mkdir(parents=True)
+        fake_edge.write_text("", encoding="utf-8")
+        monkeypatch.setenv("PROGRAMFILES(X86)", str(tmp_path))
+
+        assert app_launcher._find_windows_chromium_app_browser() == str(fake_edge)
+
+        launched_cmds = []
+        closed = []
+
+        class FakeProc:
+            def wait(self):
+                return 0
+
+            def poll(self):
+                return 0
+
+            def terminate(self):
+                pass
+
+        # Simulate window staying open >= 2s before closing cleanly
+        ticks = iter([100.0, 105.0])
+        monkeypatch.setattr(app_launcher.time, "monotonic", lambda: next(ticks))
+        import subprocess
+        monkeypatch.setattr(subprocess, "Popen", lambda cmd: (launched_cmds.append(cmd), FakeProc())[1])
+
+        ok = app_launcher._open_chromium_app_window(
+            "http://127.0.0.1:5000/",
+            storage_dir=isolated_env / "webview_user",
+            on_close_callback=lambda: closed.append(True),
+        )
+        assert ok is True
+        assert closed == [True]
+        assert launched_cmds and launched_cmds[0][0] == str(fake_edge)
+        assert "--app=http://127.0.0.1:5000/" in launched_cmds[0]
+        assert any(arg.startswith("--user-data-dir=") for arg in launched_cmds[0])
+
 
 class TestAdditionalCoverageAndEnterpriseGuards:
     def test_anomaly_detector_small_and_multiplier_sensitivity(self):

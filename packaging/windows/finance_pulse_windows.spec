@@ -1,12 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller specification for Windows standalone build (FinancePulseAnalytics.exe)."""
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
 ROOT_DIR = Path.cwd()
 ICON_PATH = ROOT_DIR / "packaging" / "assets" / "finance_pulse.ico"
 BUILD_INFO_PATH = ROOT_DIR / "build_info.json"
 
+binaries = []
 datas = [
     (str(ROOT_DIR / "templates"), "templates"),
     (str(ROOT_DIR / "static"), "static"),
@@ -47,9 +49,16 @@ hiddenimports = [
     "reportlab.pdfgen",
     "reportlab.pdfgen.canvas",
     "reportlab.lib.pagesizes",
+    "clr",
+    "pythonnet",
+    "clr_loader",
+    "clr_loader.ffi",
+    "bottle",
+    "proxy_tools",
     "webview",
     "webview.platforms.edgechromium",
     "webview.platforms.winforms",
+    "webview.platforms.mshtml",
     "analytics",
     "analytics.anomalies",
     "analytics.copilot",
@@ -71,6 +80,15 @@ hiddenimports = [
     "database.models",
 ]
 
+for _pkg in ("webview", "pythonnet", "clr_loader"):
+    try:
+        _pkg_datas, _pkg_bins, _pkg_hidden = collect_all(_pkg)
+        datas.extend(_pkg_datas)
+        binaries.extend(_pkg_bins)
+        hiddenimports.extend(_pkg_hidden)
+    except Exception:
+        pass
+
 excludes = [
     "tkinter",
     "pytest",
@@ -82,7 +100,7 @@ excludes = [
 a = Analysis(
     [str(ROOT_DIR / "app_launcher.py")],
     pathex=[str(ROOT_DIR)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

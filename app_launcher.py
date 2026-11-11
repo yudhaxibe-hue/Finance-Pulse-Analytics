@@ -139,6 +139,92 @@ def create_admin_account_cli(email: str, password: str, name: str) -> int:
     return 0
 
 
+def _find_windows_chromium_app_browser() -> Optional[str]:
+    """Locate Microsoft Edge or Google Chrome on Windows for chromeless --app mode."""
+    import shutil
+
+    candidates = []
+    for env_var in ("PROGRAMFILES(X86)", "PROGRAMFILES", "LOCALAPPDATA"):
+        root = os.environ.get(env_var)
+        if not root:
+            continue
+        candidates.extend([
+            Path(root) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+            Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe",
+        ])
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    for binary in ("msedge.exe", "msedge", "chrome.exe", "chrome"):
+        found = shutil.which(binary)
+        if found:
+            return found
+    return None
+
+
+def _open_chromium_app_window(
+    target_url: str,
+    storage_dir: Optional[Path] = None,
+    on_close_callback=None,
+) -> bool:
+    """Launch Edge/Chrome in standalone chromeless --app window mode on Windows."""
+    import subprocess
+
+    browser = _find_windows_chromium_app_browser()
+    if not browser:
+        return False
+
+    cmd = [
+        browser,
+        f"--app={target_url}",
+        "--window-size=1320,860",
+        "--new-window",
+        "--no-first-run",
+    ]
+    if storage_dir is not None:
+        shell_dir = Path(storage_dir).parent / "app_shell_profile"
+    else:
+        import config
+
+        shell_dir = Path(config.DATA_DIR) / "app_shell_profile"
+    shell_dir.mkdir(parents=True, exist_ok=True)
+    cmd.append(f"--user-data-dir={shell_dir}")
+
+    try:
+        proc = subprocess.Popen(cmd)
+    except OSError as exc:
+        _write_launcher_diag(f"Chromium --app launch failed ({browser}): {exc!r}")
+        return False
+    try:
+        start_ts = time.monotonic()
+        proc.wait()
+        # If the browser immediately handed off to an already-running process, keep server alive.
+        if time.monotonic() - start_ts < 2.0 and proc.poll() is not None:
+            while True:
+                time.sleep(0.5)
+    except KeyboardInterrupt:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+    finally:
+        if on_close_callback:
+            on_close_callback()
+    return True
+
+
+def _write_launcher_diag(detail: str) -> None:
+    try:
+        import config
+
+        log_path = Path(config.DATA_DIR) / "launcher.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {detail}\n")
+    except Exception:
+        pass
+
+
 def open_native_or_browser(
     title: str,
     target_url: str,
@@ -187,12 +273,24 @@ def open_native_or_browser(
 
         window.events.closed += _closed
         if storage_dir is not None:
-            storage_dir.mkdir(parents=True, exist_ok=True)
-            webview.start(debug=False, private_mode=False, storage_path=str(storage_dir))
+            try:
+                storage_dir.mkdir(parents=True, exist_ok=True)
+                webview.start(debug=False, private_mode=False, storage_path=str(storage_dir))
+            except Exception as storage_exc:
+                _write_launcher_diag(f"pywebview persistent storage fallback: {storage_exc!r}")
+                webview.start(debug=False)
         else:
             webview.start(debug=False)
     except Exception as exc:
-        logger.warning("Native desktop view unavailable (%s). Falling back to browser...", exc)
+        logger.warning("Native desktop view unavailable (%s). Trying standalone app window fallback...", exc)
+        _write_launcher_diag(f"pywebview failed ({exc!r}); attempting Chromium --app fallback")
+        if sys.platform == "win32" and _open_chromium_app_window(
+            target_url=target_url,
+            storage_dir=storage_dir,
+            on_close_callback=on_close_callback,
+        ):
+            return
+
         import webbrowser
 
         webbrowser.open(target_url)
