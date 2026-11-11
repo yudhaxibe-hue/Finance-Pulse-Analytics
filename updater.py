@@ -5,20 +5,24 @@ import hashlib
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 import threading
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import config
 
 _STATE_LOCK = threading.Lock()
 _OUTBOX_LOCK = threading.Lock()
+_SHUTDOWN_CALLBACK: Optional[Callable[[], None]] = None
 _UPDATE_CACHE: dict[str, Any] = {
     "checked": False,
     "checking": False,
@@ -38,7 +42,15 @@ _UPDATE_CACHE: dict[str, Any] = {
     "download_status": "idle",
     "download_path": "",
     "download_error": "",
+    "install_status": "idle",
+    "install_error": "",
 }
+
+
+def register_shutdown_callback(callback: Optional[Callable[[], None]]) -> None:
+    """Register launcher shutdown hook used when applying a frozen desktop self-update."""
+    global _SHUTDOWN_CALLBACK
+    _SHUTDOWN_CALLBACK = callback
 
 _SYNC_RUNTIME: dict[str, Any] = {
     "tokens": {},
@@ -311,9 +323,12 @@ def start_background_update_check() -> None:
 def get_update_status() -> dict[str, Any]:
     with _STATE_LOCK:
         snap = dict(_UPDATE_CACHE)
+    target = detect_desktop_install_target()
     snap["local_version"] = config.APP_VERSION
     snap["local_build"] = config.APP_BUILD
     snap["platform"] = sys.platform
+    snap["can_self_install"] = bool(target.get("can_self_install"))
+    snap["install_mode"] = str(target.get("mode") or "")
     return snap
 
 
@@ -400,12 +415,345 @@ def reveal_downloaded_update() -> tuple[bool, str]:
         if sys.platform == "darwin":
             subprocess.Popen(["open", "-R", dl_path])
         elif sys.platform.startswith("win"):
-            os.startfile(str(Path(dl_path).parent))  # type: ignore[attr-defined]
+            try:
+                subprocess.Popen(["explorer", f"/select,{dl_path}"])
+            except Exception:
+                os.startfile(str(Path(dl_path).parent))  # type: ignore[attr-defined]
         else:
             subprocess.Popen(["xdg-open", str(Path(dl_path).parent)])
         return True, dl_path
     except Exception as exc:
         return False, str(exc)
+
+
+def _is_dir_writable(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / f".fp_write_probe_{os.getpid()}"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
+def is_safe_zip_member(member_name: str) -> bool:
+    """Validate zip archive entry paths against Zip-Slip traversal or absolute paths."""
+    if not member_name or not isinstance(member_name, str):
+        return False
+    norm = member_name.replace("\\", "/").strip()
+    if not norm or norm.startswith("/") or re.match(r"^[A-Za-z]:", norm):
+        return False
+    parts = [p for p in norm.split("/") if p]
+    return bool(parts) and all(part not in (".", "..") for part in parts)
+
+
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with open(path, "rb") as fh:
+        while True:
+            chunk = fh.read(65536)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest().lower()
+
+
+def detect_desktop_install_target() -> dict[str, Any]:
+    """Identify whether the running frozen desktop app can cleanly update/reinstall in-place."""
+    if not getattr(sys, "frozen", False):
+        return {
+            "can_self_install": False,
+            "mode": "source_open_only",
+            "target_path": "",
+            "exe_name": "",
+        }
+    exe_path = Path(sys.executable).resolve()
+    if sys.platform == "darwin":
+        app_bundle = next((p for p in exe_path.parents if p.suffix == ".app"), None)
+        if app_bundle and app_bundle.name != "FinancePulseAnalytics.app":
+            return {
+                "can_self_install": False,
+                "mode": "custom_admin_bundle",
+                "target_path": "",
+                "exe_name": app_bundle.name,
+            }
+        if app_bundle and not str(app_bundle).startswith("/Volumes/") and _is_dir_writable(app_bundle.parent):
+            return {
+                "can_self_install": True,
+                "mode": "macos_app_swap",
+                "target_path": str(app_bundle),
+                "exe_name": app_bundle.name,
+            }
+        apps_dir = Path("/Applications")
+        if _is_dir_writable(apps_dir):
+            return {
+                "can_self_install": True,
+                "mode": "macos_app_swap",
+                "target_path": str(apps_dir / "FinancePulseAnalytics.app"),
+                "exe_name": "FinancePulseAnalytics.app",
+            }
+        return {
+            "can_self_install": False,
+            "mode": "macos_open_only",
+            "target_path": "",
+            "exe_name": "",
+        }
+    if sys.platform.startswith("win"):
+        if exe_path.name.lower() != "financepulseanalytics.exe":
+            return {
+                "can_self_install": False,
+                "mode": "custom_admin_bundle",
+                "target_path": "",
+                "exe_name": exe_path.name,
+            }
+        exe_dir = exe_path.parent
+        if _is_dir_writable(exe_dir):
+            return {
+                "can_self_install": True,
+                "mode": "windows_dir_swap",
+                "target_path": str(exe_dir),
+                "exe_name": exe_path.name,
+            }
+        local_root = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+        fallback_dir = local_root / "Programs" / "FinancePulseAnalytics"
+        if _is_dir_writable(fallback_dir):
+            return {
+                "can_self_install": True,
+                "mode": "windows_dir_swap",
+                "target_path": str(fallback_dir),
+                "exe_name": exe_path.name,
+            }
+        return {
+            "can_self_install": False,
+            "mode": "windows_open_only",
+            "target_path": "",
+            "exe_name": exe_path.name,
+        }
+    return {
+        "can_self_install": False,
+        "mode": "linux_open_only",
+        "target_path": "",
+        "exe_name": exe_path.name,
+    }
+
+
+def _extract_update_zip(dl_path: Path, staging_dir: Path) -> None:
+    shutil.rmtree(staging_dir, ignore_errors=True)
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "darwin" and Path("/usr/bin/ditto").is_file():
+        subprocess.run(["/usr/bin/ditto", "-x", "-k", str(dl_path), str(staging_dir)], check=True)
+        return
+    with zipfile.ZipFile(dl_path, "r") as zf:
+        infos = zf.infolist()
+        for info in infos:
+            if not is_safe_zip_member(info.filename):
+                raise ValueError(f"Blocked unsafe zip path: {info.filename}")
+        zf.extractall(staging_dir)
+
+
+def _build_macos_apply_script(old_pid: int, staged_app: Path, target_app: Path, staging_dir: Path) -> str:
+    backup_app = Path(f"{target_app}.backup_old")
+    lines = [
+        "#!/bin/sh",
+        f"OLD_PID={int(old_pid)}",
+        f"TARGET_APP={shlex.quote(str(target_app))}",
+        f"STAGED_APP={shlex.quote(str(staged_app))}",
+        f"STAGING_DIR={shlex.quote(str(staging_dir))}",
+        f"BACKUP_APP={shlex.quote(str(backup_app))}",
+        "i=0",
+        'while kill -0 "$OLD_PID" 2>/dev/null && [ $i -lt 80 ]; do',
+        "  sleep 0.25",
+        "  i=$((i + 1))",
+        "done",
+        'rm -rf "$BACKUP_APP"',
+        'if [ -d "$TARGET_APP" ]; then',
+        '  mv "$TARGET_APP" "$BACKUP_APP" || exit 1',
+        "fi",
+        'if mv "$STAGED_APP" "$TARGET_APP"; then',
+        '  rm -rf "$BACKUP_APP" "$STAGING_DIR"',
+        '  /usr/bin/xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true',
+        '  open -n "$TARGET_APP"',
+        "else",
+        '  [ -d "$BACKUP_APP" ] && [ ! -d "$TARGET_APP" ] && mv "$BACKUP_APP" "$TARGET_APP"',
+        "  exit 1",
+        "fi",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _build_windows_apply_script(
+    old_pid: int,
+    staged_dir: Path,
+    target_dir: Path,
+    exe_name: str,
+    staging_dir: Path,
+) -> str:
+    # Avoid parenthesized IF blocks so paths like Program Files (x86) never break batch parsing.
+    lines = [
+        "@echo off",
+        "setlocal",
+        f'set "OLD_PID={int(old_pid)}"',
+        f'set "STAGED_DIR={staged_dir}"',
+        f'set "TARGET_DIR={target_dir}"',
+        f'set "EXE_NAME={exe_name}"',
+        f'set "STAGING_ROOT={staging_dir}"',
+        "set /a COUNT=0",
+        ":wait_loop",
+        'tasklist /FI "PID eq %OLD_PID%" 2>NUL | find /I "%OLD_PID%" >NUL',
+        "if errorlevel 1 goto do_copy",
+        "set /a COUNT+=1",
+        "if %COUNT% GEQ 60 goto do_copy",
+        "ping 127.0.0.1 -n 2 >NUL",
+        "goto wait_loop",
+        ":do_copy",
+        'if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"',
+        'robocopy "%STAGED_DIR%" "%TARGET_DIR%" /E /R:4 /W:1 >NUL',
+        "if errorlevel 8 goto fallback_xcopy",
+        "goto launch_app",
+        ":fallback_xcopy",
+        'xcopy "%STAGED_DIR%\\*" "%TARGET_DIR%\\" /E /I /Y /Q >NUL',
+        ":launch_app",
+        'rmdir /S /Q "%STAGING_ROOT%" >NUL 2>&1',
+        'start "" "%TARGET_DIR%\\%EXE_NAME%"',
+        "endlocal",
+    ]
+    return "\r\n".join(lines) + "\r\n"
+
+
+def install_desktop_update(trigger_shutdown: bool = True) -> dict[str, Any]:
+    """Verify, extract, and apply a downloaded desktop update package without touching user data."""
+    with _STATE_LOCK:
+        dl_path_str = str(_UPDATE_CACHE.get("download_path") or "")
+        dl_status = str(_UPDATE_CACHE.get("download_status") or "idle")
+        expected_sha = str(_UPDATE_CACHE.get("sha256") or "")
+
+    if dl_status != "ready" or not dl_path_str or not Path(dl_path_str).is_file():
+        dl_state = download_desktop_update()
+        if dl_state.get("download_status") != "ready":
+            return {
+                **get_update_status(),
+                "ok": False,
+                "restarting": False,
+                "message": dl_state.get("download_error") or "Unable to download update package.",
+            }
+        dl_path_str = str(dl_state.get("download_path") or "")
+        expected_sha = str(dl_state.get("sha256") or "")
+
+    dl_path = Path(dl_path_str)
+    if not dl_path.is_file():
+        return {
+            **get_update_status(),
+            "ok": False,
+            "restarting": False,
+            "message": "Downloaded update package is missing.",
+        }
+
+    with _STATE_LOCK:
+        _UPDATE_CACHE["install_status"] = "preparing"
+        _UPDATE_CACHE["install_error"] = ""
+
+    try:
+        if expected_sha:
+            actual_sha = _sha256_file(dl_path)
+            if actual_sha != expected_sha.lower():
+                dl_path.unlink(missing_ok=True)
+                raise ValueError(f"SHA-256 verification failed ({actual_sha[:12]} != {expected_sha[:12]})")
+
+        staging_dir = Path(config.DATA_DIR) / "update_staging"
+        _extract_update_zip(dl_path, staging_dir)
+        target_info = detect_desktop_install_target()
+
+        if not target_info.get("can_self_install"):
+            if sys.platform == "darwin":
+                staged_apps = sorted(staging_dir.rglob("*.app"))
+                if staged_apps:
+                    subprocess.run(["/usr/bin/xattr", "-dr", "com.apple.quarantine", str(staged_apps[0])], check=False)
+            reveal_downloaded_update()
+            with _STATE_LOCK:
+                _UPDATE_CACHE["install_status"] = "manual"
+                _UPDATE_CACHE["install_error"] = ""
+            return {
+                **get_update_status(),
+                "ok": True,
+                "restarting": False,
+                "message": f"Verified package ready at {dl_path}. Double-click to reinstall or open.",
+            }
+
+        mode = target_info["mode"]
+        if mode == "macos_app_swap":
+            staged_apps = [p for p in staging_dir.rglob("*.app") if "__MACOSX" not in p.parts]
+            if not staged_apps:
+                raise RuntimeError("No .app bundle found inside downloaded macOS update archive.")
+            staged_app = staged_apps[0]
+            subprocess.run(["/usr/bin/xattr", "-dr", "com.apple.quarantine", str(staged_app)], check=False)
+            script_path = Path(config.DATA_DIR) / "apply_update.sh"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text(
+                _build_macos_apply_script(
+                    old_pid=os.getpid(),
+                    staged_app=staged_app,
+                    target_app=Path(target_info["target_path"]),
+                    staging_dir=staging_dir,
+                ),
+                encoding="utf-8",
+            )
+            os.chmod(script_path, 0o755)
+            subprocess.Popen(["/bin/sh", str(script_path)], start_new_session=True)
+        elif mode == "windows_dir_swap":
+            exe_name = target_info["exe_name"] or "FinancePulseAnalytics.exe"
+            exe_hits = list(staging_dir.rglob(exe_name)) or list(staging_dir.rglob("*.exe"))
+            if not exe_hits:
+                raise RuntimeError("No executable found inside downloaded Windows update archive.")
+            staged_dir = exe_hits[0].parent
+            script_path = Path(config.DATA_DIR) / "apply_update.cmd"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text(
+                _build_windows_apply_script(
+                    old_pid=os.getpid(),
+                    staged_dir=staged_dir,
+                    target_dir=Path(target_info["target_path"]),
+                    exe_name=exe_hits[0].name,
+                    staging_dir=staging_dir,
+                ),
+                encoding="utf-8",
+            )
+            creation_flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            subprocess.Popen(["cmd.exe", "/c", str(script_path)], creationflags=creation_flags)
+        else:
+            reveal_downloaded_update()
+            with _STATE_LOCK:
+                _UPDATE_CACHE["install_status"] = "manual"
+            return {
+                **get_update_status(),
+                "ok": True,
+                "restarting": False,
+                "message": f"Verified package ready at {dl_path}.",
+            }
+
+        with _STATE_LOCK:
+            _UPDATE_CACHE["install_status"] = "restarting"
+            _UPDATE_CACHE["install_error"] = ""
+
+        if trigger_shutdown and _SHUTDOWN_CALLBACK is not None:
+            threading.Timer(0.6, _SHUTDOWN_CALLBACK).start()
+
+        return {
+            **get_update_status(),
+            "ok": True,
+            "restarting": True,
+            "message": "Installing verified update and relaunching now…",
+        }
+    except Exception as exc:
+        with _STATE_LOCK:
+            _UPDATE_CACHE["install_status"] = "error"
+            _UPDATE_CACHE["install_error"] = str(exc)
+        return {
+            **get_update_status(),
+            "ok": False,
+            "restarting": False,
+            "message": str(exc),
+        }
 
 
 def _is_self_url(base_url: str, server_port: Optional[int]) -> bool:

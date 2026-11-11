@@ -376,6 +376,22 @@ def main(argv: Optional[list[str]] = None) -> int:
         server_thread.stop()
         return 1
 
+    def _trigger_reinstall_exit() -> None:
+        logger.info("Closing desktop shell to apply verified update...")
+        try:
+            import webview
+
+            for win in list(getattr(webview, "windows", []) or []):
+                try:
+                    win.destroy()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        server_thread.stop()
+        os._exit(0)
+
+    updater.register_shutdown_callback(_trigger_reinstall_exit)
     updater.start_background_update_check()
 
     def _shutdown(*_args):

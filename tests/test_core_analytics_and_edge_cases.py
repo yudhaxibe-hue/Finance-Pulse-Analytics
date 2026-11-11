@@ -390,3 +390,107 @@ class TestAdditionalCoverageAndEnterpriseGuards:
             assert resp.status_code == 200
         fc = c.get("/user/forecasting?target=expense&horizon=12")
         assert fc.status_code == 200
+
+    def test_update_banner_present_on_landing_and_auth_and_install_guard(self, isolated_env):
+        import app
+
+        c = app.app.test_client()
+        for route in ("/", "/login", "/register", "/admin/login"):
+            resp = c.get(route)
+            assert resp.status_code == 200
+            assert b'id="desktopUpdateBanner"' in resp.data
+            assert b'id="btnDesktopInstallUpdate"' in resp.data
+
+        # External proxied client must be blocked from triggering local install-update
+        blocked = c.post("/api/system/install-update", headers={"X-Forwarded-For": "203.0.113.10"})
+        assert blocked.status_code == 403
+
+    def test_desktop_updater_zip_safety_targets_and_self_install(self, isolated_env, monkeypatch, tmp_path):
+        import hashlib
+        import subprocess
+        import zipfile
+        from pathlib import Path
+
+        assert updater.is_safe_zip_member("FinancePulseAnalytics/FinancePulseAnalytics.exe") is True
+        assert updater.is_safe_zip_member("../outside.txt") is False
+        assert updater.is_safe_zip_member("/etc/passwd") is False
+        assert updater.is_safe_zip_member("C:\\Windows\\system32\\cmd.exe") is False
+
+        # Unfrozen source mode never self-overwrites repo files
+        monkeypatch.delattr(updater.sys, "frozen", raising=False)
+        assert updater.detect_desktop_install_target()["can_self_install"] is False
+
+        # Protect custom FinancePulseAdmin.app from overwriting itself with user bundle
+        monkeypatch.setattr(updater.sys, "frozen", True, raising=False)
+        monkeypatch.setattr(updater.sys, "platform", "darwin")
+        admin_exe = tmp_path / "FinancePulseAdmin.app" / "Contents" / "MacOS" / "FinancePulseAdmin"
+        admin_exe.parent.mkdir(parents=True)
+        admin_exe.write_text("", encoding="utf-8")
+        monkeypatch.setattr(updater.sys, "executable", str(admin_exe))
+        admin_target = updater.detect_desktop_install_target()
+        assert admin_target["can_self_install"] is False
+        assert admin_target["mode"] == "custom_admin_bundle"
+
+        # Valid Windows install script avoids parenthesized IF blocks
+        win_script = updater._build_windows_apply_script(
+            4242,
+            tmp_path / "staged",
+            tmp_path / "Program Files (x86)" / "FinancePulseAnalytics",
+            "FinancePulseAnalytics.exe",
+            tmp_path / "staging",
+        )
+        assert "robocopy" in win_script
+        assert "FinancePulseAnalytics.exe" in win_script
+
+        # Valid macOS frozen FinancePulseAnalytics.app swap with verified ZIP
+        user_app = tmp_path / "FinancePulseAnalytics.app"
+        user_exe = user_app / "Contents" / "MacOS" / "FinancePulseAnalytics"
+        user_exe.parent.mkdir(parents=True)
+        user_exe.write_text("#!/bin/sh\necho old\n", encoding="utf-8")
+        monkeypatch.setattr(updater.sys, "executable", str(user_exe))
+        user_target = updater.detect_desktop_install_target()
+        assert user_target["can_self_install"] is True
+        assert user_target["mode"] == "macos_app_swap"
+
+        zip_path = tmp_path / "FinancePulseAnalytics-macOS-unsigned.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("FinancePulseAnalytics.app/Contents/Info.plist", "<plist/>")
+            zf.writestr("FinancePulseAnalytics.app/Contents/MacOS/FinancePulseAnalytics", "new-bin")
+
+        # Tampered SHA-256 must fail before extracting
+        with updater._STATE_LOCK:
+            updater._UPDATE_CACHE["download_status"] = "ready"
+            updater._UPDATE_CACHE["download_path"] = str(zip_path)
+            updater._UPDATE_CACHE["sha256"] = "0" * 64
+        bad_res = updater.install_desktop_update(trigger_shutdown=False)
+        assert bad_res["ok"] is False
+        assert "SHA-256 verification failed" in bad_res["message"]
+
+        # Re-create ZIP cleanly with matching SHA-256 and mock Popen to verify apply script launch
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("FinancePulseAnalytics.app/Contents/Info.plist", "<plist/>")
+            zf.writestr("FinancePulseAnalytics.app/Contents/MacOS/FinancePulseAnalytics", "new-bin")
+        good_sha = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+        with updater._STATE_LOCK:
+            updater._UPDATE_CACHE["download_status"] = "ready"
+            updater._UPDATE_CACHE["download_path"] = str(zip_path)
+            updater._UPDATE_CACHE["sha256"] = good_sha
+
+        spawned = []
+        real_popen = subprocess.Popen
+
+        def selective_popen(cmd, **kw):
+            if cmd and cmd[0] == "/bin/sh":
+                spawned.append(cmd)
+                return None
+            return real_popen(cmd, **kw)
+
+        monkeypatch.setattr(subprocess, "Popen", selective_popen)
+        ok_res = updater.install_desktop_update(trigger_shutdown=False)
+        assert ok_res["ok"] is True
+        assert ok_res["restarting"] is True
+        assert ok_res["install_status"] == "restarting"
+        assert spawned and spawned[0][0] == "/bin/sh"
+        assert (Path(config.DATA_DIR) / "apply_update.sh").is_file()
+        assert (Path(config.DATA_DIR) / "update_staging" / "FinancePulseAnalytics.app").is_dir()
+

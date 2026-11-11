@@ -329,6 +329,8 @@ public final class AppUpdater {
     }
 
     public File downloadVerifiedApkUpdate() {
+        // Refresh manifest right before APK download so SHA-256 never lags behind a freshly pushed CI release.
+        runUpdateCheck();
         if (latestApkUrl == null || !latestApkUrl.startsWith("https://")) {
             downloadStatus = "error";
             lastError = "APK update URL unavailable.";
@@ -380,6 +382,8 @@ public final class AppUpdater {
             conn.setReadTimeout(7000);
             conn.setRequestProperty("Accept", "application/json");
             conn.setRequestProperty("User-Agent", "FinancePulseAndroid/" + getInstalledVersionName());
+            conn.setRequestProperty("Cache-Control", "no-cache");
+            conn.setRequestProperty("Pragma", "no-cache");
             if (bearerToken != null && !bearerToken.isEmpty()) {
                 conn.setRequestProperty("Authorization", "Bearer " + bearerToken);
             }
@@ -482,6 +486,8 @@ public final class AppUpdater {
             conn.setConnectTimeout(timeoutMs);
             conn.setReadTimeout(timeoutMs * 2);
             conn.setRequestProperty("User-Agent", "FinancePulseAndroid/" + getInstalledVersionName());
+            conn.setRequestProperty("Cache-Control", "no-cache");
+            conn.setRequestProperty("Pragma", "no-cache");
             int code = conn.getResponseCode();
             if (code == HttpURLConnection.HTTP_MOVED_PERM
                     || code == HttpURLConnection.HTTP_MOVED_TEMP

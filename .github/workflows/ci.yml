@@ -356,7 +356,8 @@ jobs:
           body: |
             # Finance Pulse Analytics: Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform (v${{ env.APP_VERSION }})
 
-            ### 1-Click Downloads (No Setup Required)
-            * **Windows Users:** Download [`FinancePulseAnalytics-Windows-unsigned.zip`](https://github.com/${{ github.repository }}/releases/download/v1.0.0/FinancePulseAnalytics-Windows-unsigned.zip), unzip, and double-click `FinancePulseAnalytics.exe`.
-            * **macOS Users:** Download [`FinancePulseAnalytics-macOS-unsigned.zip`](https://github.com/${{ github.repository }}/releases/download/v1.0.0/FinancePulseAnalytics-macOS-unsigned.zip), unzip, and open `FinancePulseAnalytics.app`.
-            * **Android Users:** Download [`FinancePulseAnalytics-Android.apk`](https://github.com/${{ github.repository }}/releases/download/v1.0.0/FinancePulseAnalytics-Android.apk) and install directly (Android 8.0+ / SDK 26+).
+            ### Direct 1-Click Downloads & Easy Updates
+            * **Already installed?** Open the app and click **Download update → Install & relaunch** (Desktop) or **Download** (Android) from the in-app update banner — your saved local accounts and financial data stay intact.
+            * **Windows (New or Reinstall):** Download [`FinancePulseAnalytics-Windows-unsigned.zip`](https://github.com/${{ github.repository }}/releases/download/v1.0.0/FinancePulseAnalytics-Windows-unsigned.zip), unzip, and double-click `FinancePulseAnalytics.exe` (your ledger data in `%APPDATA%\FinancePulseAnalytics` is untouched).
+            * **macOS (New or Reinstall):** Download [`FinancePulseAnalytics-macOS-unsigned.zip`](https://github.com/${{ github.repository }}/releases/download/v1.0.0/FinancePulseAnalytics-macOS-unsigned.zip), unzip, and open `FinancePulseAnalytics.app`.
+            * **Android APK (Update or Install):** Download [`FinancePulseAnalytics-Android.apk`](https://github.com/${{ github.repository }}/releases/download/v1.0.0/FinancePulseAnalytics-Android.apk) and tap **Update** when prompted (Android 8.0+ / SDK 26+).

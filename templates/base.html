@@ -145,17 +145,7 @@
     </header>
 
     <div class="app-content">
-      <div class="update-banner" id="desktopUpdateBanner" hidden>
-        <div class="update-banner-copy">
-          <strong id="desktopUpdateTitle">Update available</strong>
-          <span id="desktopUpdateDetail" class="muted"></span>
-        </div>
-        <div class="update-banner-actions">
-          <button type="button" class="button compact" id="btnDesktopDownloadUpdate">Download update</button>
-          <button type="button" class="button secondary compact" id="btnDesktopOpenUpdate" hidden>Open package</button>
-          <button type="button" class="button quiet compact" id="btnDesktopDismissUpdate">Dismiss</button>
-        </div>
-      </div>
+      {% include '_update_banner.html' %}
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}

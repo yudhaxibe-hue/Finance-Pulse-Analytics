@@ -397,6 +397,10 @@ p {
   display: none !important;
 }
 
+.auth-update-wrap {
+  width: min(100%, 440px);
+}
+
 .update-banner-copy {
   display: flex;
   align-items: baseline;

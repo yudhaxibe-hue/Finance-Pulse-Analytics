@@ -444,46 +444,69 @@
   const updateTitle = document.getElementById("desktopUpdateTitle");
   const updateDetail = document.getElementById("desktopUpdateDetail");
   const btnBannerDownload = document.getElementById("btnDesktopDownloadUpdate");
+  const btnBannerInstall = document.getElementById("btnDesktopInstallUpdate");
   const btnBannerOpen = document.getElementById("btnDesktopOpenUpdate");
   const btnBannerDismiss = document.getElementById("btnDesktopDismissUpdate");
   const settingsUpdateStatus = document.getElementById("settingsUpdateStatus");
   const btnSettingsCheck = document.getElementById("btnSettingsCheckUpdate");
   const btnSettingsDownload = document.getElementById("btnSettingsDownloadUpdate");
+  const btnSettingsInstall = document.getElementById("btnSettingsInstallUpdate");
 
   function renderUpdateState(info) {
     if (!info || typeof info !== "object") return;
+    const isReady = info.download_status === "ready";
+    const isDownloading = info.download_status === "downloading";
+    const isRestarting = info.install_status === "restarting";
+    const canInstall = Boolean(info.can_self_install);
+
     if (settingsUpdateStatus) {
-      if (info.checking) {
-        settingsUpdateStatus.textContent = "Checking for updates…";
-      } else if (info.download_status === "downloading") {
-        settingsUpdateStatus.textContent = "Downloading and verifying update package…";
-      } else if (info.download_status === "ready") {
-        settingsUpdateStatus.textContent = `Downloaded verified package to ${info.download_path}.`;
+      if (isRestarting) {
+        settingsUpdateStatus.textContent = "Installing verified update and relaunching… Please wait a few seconds.";
+      } else if (info.checking) {
+        settingsUpdateStatus.textContent = "Checking GitHub Releases for updates…";
+      } else if (isDownloading) {
+        settingsUpdateStatus.textContent = "Downloading and verifying update package from GitHub…";
+      } else if (info.install_status === "error" && info.install_error) {
+        settingsUpdateStatus.textContent = `Update install failed: ${info.install_error}`;
+      } else if (isReady) {
+        settingsUpdateStatus.textContent = canInstall
+          ? `Verified v${info.latest_version} downloaded (${info.download_path}). Click Install & relaunch to upgrade without losing data.`
+          : `Downloaded verified package to ${info.download_path}.`;
       } else if (info.update_available) {
-        settingsUpdateStatus.textContent = `Update ready: v${info.latest_version} (Build ${info.latest_build}) vs installed v${info.local_version} (Build ${info.local_build}).`;
+        settingsUpdateStatus.textContent = `New version available: v${info.latest_version} (Build ${info.latest_build}) vs installed v${info.local_version} (Build ${info.local_build}).`;
       } else if (info.error) {
         settingsUpdateStatus.textContent = `Installed: v${info.local_version} (Build ${info.local_build}) · Offline (${info.error})`;
       } else if (info.checked) {
         settingsUpdateStatus.textContent = `Up to date on v${info.local_version} (Build ${info.local_build}).`;
       }
       if (btnSettingsDownload) {
-        btnSettingsDownload.hidden = !info.update_available || !info.download_url;
+        btnSettingsDownload.hidden = !info.update_available || !info.download_url || isReady || isRestarting;
+      }
+      if (btnSettingsInstall) {
+        btnSettingsInstall.hidden = !isReady || !canInstall || isRestarting;
       }
     }
     if (banner && info.update_available && !sessionStorage.getItem("fp_dismiss_update_" + info.latest_build)) {
       banner.hidden = false;
-      if (updateTitle) updateTitle.textContent = `Update available: v${info.latest_version}`;
+      if (updateTitle) updateTitle.textContent = `New version available: v${info.latest_version}`;
       if (updateDetail) {
-        if (info.download_status === "ready") {
-          updateDetail.textContent = `Verified package saved at ${info.download_path}`;
+        if (isRestarting) {
+          updateDetail.textContent = "Applying verified update and relaunching… Your data stays intact.";
+        } else if (info.install_status === "error" && info.install_error) {
+          updateDetail.textContent = info.install_error;
+        } else if (isReady) {
+          updateDetail.textContent = canInstall
+            ? "Verified package ready · Click Install & relaunch (your saved data stays intact)"
+            : `Verified package saved at ${info.download_path}`;
         } else if (info.download_status === "error" && info.download_error) {
           updateDetail.textContent = info.download_error;
         } else {
-          updateDetail.textContent = `Build ${info.latest_build} ready for direct download`;
+          updateDetail.textContent = `Build ${info.latest_build} ready · Click to download from GitHub`;
         }
       }
-      if (btnBannerDownload) btnBannerDownload.hidden = !info.download_url || info.download_status === "ready";
-      if (btnBannerOpen) btnBannerOpen.hidden = info.download_status !== "ready";
+      if (btnBannerDownload) btnBannerDownload.hidden = !info.download_url || isReady || isRestarting;
+      if (btnBannerInstall) btnBannerInstall.hidden = !isReady || !canInstall || isRestarting;
+      if (btnBannerOpen) btnBannerOpen.hidden = !isReady || isRestarting;
     } else if (banner && !info.update_available) {
       banner.hidden = true;
     }
@@ -491,8 +514,8 @@
 
   async function triggerUpdateDownload(btn) {
     if (btn) btn.disabled = true;
-    if (updateDetail) updateDetail.textContent = "Downloading and checking SHA-256 checksum…";
-    if (settingsUpdateStatus) settingsUpdateStatus.textContent = "Downloading and checking SHA-256 checksum…";
+    if (updateDetail) updateDetail.textContent = "Downloading from GitHub and verifying SHA-256 checksum…";
+    if (settingsUpdateStatus) settingsUpdateStatus.textContent = "Downloading from GitHub and verifying SHA-256 checksum…";
     try {
       const res = await fetch("/api/system/download-update", { method: "POST" });
       if (res.ok) renderUpdateState(await res.json());
@@ -503,19 +526,58 @@
     }
   }
 
+  async function triggerUpdateInstall(btn) {
+    if (btn) btn.disabled = true;
+    if (updateDetail) updateDetail.textContent = "Verifying package and preparing update…";
+    if (settingsUpdateStatus) settingsUpdateStatus.textContent = "Verifying package and preparing update…";
+    try {
+      const res = await fetch("/api/system/install-update", { method: "POST" });
+      const data = await res.json();
+      renderUpdateState(data);
+      if (data && data.message && updateDetail) {
+        updateDetail.textContent = data.message;
+      }
+      if (data && data.message && settingsUpdateStatus) {
+        settingsUpdateStatus.textContent = data.message;
+      }
+    } catch (_e) {
+      if (updateDetail) updateDetail.textContent = "Unable to launch installer right now. Try Open package.";
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   if (banner || settingsUpdateStatus) {
-    fetch("/api/system/update-status")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) renderUpdateState(data);
-      })
-      .catch(() => {});
+    let pollTries = 0;
+    const pollInitialStatus = () => {
+      fetch("/api/system/update-status")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) return;
+          renderUpdateState(data);
+          if ((!data.checked || data.checking) && pollTries < 15) {
+            pollTries += 1;
+            setTimeout(pollInitialStatus, 1000);
+          }
+        })
+        .catch(() => {});
+    };
+    pollInitialStatus();
+
+    setInterval(() => {
+      fetch("/api/system/check-updates", { method: "POST" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data) renderUpdateState(data);
+        })
+        .catch(() => {});
+    }, 30 * 60 * 1000);
   }
 
   if (btnSettingsCheck) {
     btnSettingsCheck.addEventListener("click", async () => {
       btnSettingsCheck.disabled = true;
-      if (settingsUpdateStatus) settingsUpdateStatus.textContent = "Checking for updates…";
+      if (settingsUpdateStatus) settingsUpdateStatus.textContent = "Checking GitHub Releases for updates…";
       try {
         const res = await fetch("/api/system/check-updates", { method: "POST" });
         if (res.ok) renderUpdateState(await res.json());
@@ -528,7 +590,9 @@
   }
 
   if (btnSettingsDownload) btnSettingsDownload.addEventListener("click", () => triggerUpdateDownload(btnSettingsDownload));
+  if (btnSettingsInstall) btnSettingsInstall.addEventListener("click", () => triggerUpdateInstall(btnSettingsInstall));
   if (btnBannerDownload) btnBannerDownload.addEventListener("click", () => triggerUpdateDownload(btnBannerDownload));
+  if (btnBannerInstall) btnBannerInstall.addEventListener("click", () => triggerUpdateInstall(btnBannerInstall));
   if (btnBannerOpen) {
     btnBannerOpen.addEventListener("click", async () => {
       try { await fetch("/api/system/open-download", { method: "POST" }); } catch (_e) {}

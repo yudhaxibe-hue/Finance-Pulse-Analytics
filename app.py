@@ -1729,6 +1729,14 @@ def system_open_download():
     return jsonify({"ok": ok, "message": msg}), (200 if ok else 400)
 
 
+@app.route("/api/system/install-update", methods=["POST"])
+def system_install_update():
+    if not _can_manage_local_system():
+        abort(403)
+    res = updater.install_desktop_update()
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
 @app.route("/api/system/operator-sync", methods=["GET", "POST"])
 def system_operator_sync():
     if not _can_manage_local_system():

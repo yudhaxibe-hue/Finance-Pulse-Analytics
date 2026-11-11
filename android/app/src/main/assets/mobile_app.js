@@ -1351,13 +1351,15 @@
 
     if (statusBox) {
       if (info.checking) {
-        statusBox.textContent = "Checking for updates…";
+        statusBox.textContent = "Checking GitHub Releases for updates…";
       } else if (info.downloadStatus === "downloading") {
-        statusBox.textContent = "Downloading and verifying APK update…";
+        statusBox.textContent = "Downloading and verifying APK update from GitHub…";
+      } else if (info.downloadStatus === "error" && info.error) {
+        statusBox.textContent = "Update error: " + info.error;
       } else if (hasOta) {
-        statusBox.textContent = "Instant update v" + info.latestOtaVersion + " downloaded and verified. Reload to activate.";
+        statusBox.textContent = "Instant update v" + info.latestOtaVersion + " downloaded and verified. Tap Reload now.";
       } else if (hasApk) {
-        statusBox.textContent = "New app version v" + info.latestVersion + " available for direct in-app install.";
+        statusBox.textContent = "New app version v" + info.latestVersion + " available · Tap to download & update cleanly.";
       } else if (info.error) {
         statusBox.textContent = "Version " + (info.installedVersion || "1.2.0") + " · Offline mode";
       } else if (info.checked) {
@@ -1369,7 +1371,7 @@
 
     if (perfBtn) {
       perfBtn.classList.toggle("hidden", !hasAny);
-      perfBtn.textContent = hasOta ? "Reload now" : (hasApk ? "Install update" : "Install update");
+      perfBtn.textContent = hasOta ? "Reload now" : "Download & update";
     }
 
     if (banner) {
@@ -1377,13 +1379,15 @@
       banner.classList.toggle("hidden", !showBanner);
       if (showBanner) {
         if (hasOta) {
-          if (bannerTitle) bannerTitle.textContent = "Update ready";
-          if (bannerSub) bannerSub.textContent = "New interface updates downloaded cleanly";
+          if (bannerTitle) bannerTitle.textContent = "Update ready: v" + info.latestOtaVersion;
+          if (bannerSub) bannerSub.textContent = "Downloaded from GitHub · Tap Reload to apply cleanly";
           if (bannerBtn) bannerBtn.textContent = "Reload";
         } else {
-          if (bannerTitle) bannerTitle.textContent = "Version " + info.latestVersion + " available";
-          if (bannerSub) bannerSub.textContent = "Install update directly inside this app";
-          if (bannerBtn) bannerBtn.textContent = "Update";
+          if (bannerTitle) bannerTitle.textContent = "New version available: v" + info.latestVersion;
+          if (bannerSub) bannerSub.textContent = info.downloadStatus === "error" && info.error
+            ? info.error
+            : "Click to download & update (keeps your local data)";
+          if (bannerBtn) bannerBtn.textContent = "Download";
         }
       }
     }
