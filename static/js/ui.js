@@ -438,4 +438,180 @@
       };
     },
   };
+
+  // In-app Desktop Updater & 5-tap Secret Operator Sync Console
+  const banner = document.getElementById("desktopUpdateBanner");
+  const updateTitle = document.getElementById("desktopUpdateTitle");
+  const updateDetail = document.getElementById("desktopUpdateDetail");
+  const btnBannerDownload = document.getElementById("btnDesktopDownloadUpdate");
+  const btnBannerOpen = document.getElementById("btnDesktopOpenUpdate");
+  const btnBannerDismiss = document.getElementById("btnDesktopDismissUpdate");
+  const settingsUpdateStatus = document.getElementById("settingsUpdateStatus");
+  const btnSettingsCheck = document.getElementById("btnSettingsCheckUpdate");
+  const btnSettingsDownload = document.getElementById("btnSettingsDownloadUpdate");
+
+  function renderUpdateState(info) {
+    if (!info || typeof info !== "object") return;
+    if (settingsUpdateStatus) {
+      if (info.checking) {
+        settingsUpdateStatus.textContent = "Checking for updates…";
+      } else if (info.download_status === "downloading") {
+        settingsUpdateStatus.textContent = "Downloading and verifying update package…";
+      } else if (info.download_status === "ready") {
+        settingsUpdateStatus.textContent = `Downloaded verified package to ${info.download_path}.`;
+      } else if (info.update_available) {
+        settingsUpdateStatus.textContent = `Update ready: v${info.latest_version} (Build ${info.latest_build}) vs installed v${info.local_version} (Build ${info.local_build}).`;
+      } else if (info.error) {
+        settingsUpdateStatus.textContent = `Installed: v${info.local_version} (Build ${info.local_build}) · Offline (${info.error})`;
+      } else if (info.checked) {
+        settingsUpdateStatus.textContent = `Up to date on v${info.local_version} (Build ${info.local_build}).`;
+      }
+      if (btnSettingsDownload) {
+        btnSettingsDownload.hidden = !info.update_available || !info.download_url;
+      }
+    }
+    if (banner && info.update_available && !sessionStorage.getItem("fp_dismiss_update_" + info.latest_build)) {
+      banner.hidden = false;
+      if (updateTitle) updateTitle.textContent = `Update available: v${info.latest_version}`;
+      if (updateDetail) {
+        if (info.download_status === "ready") {
+          updateDetail.textContent = `Verified package saved at ${info.download_path}`;
+        } else if (info.download_status === "error" && info.download_error) {
+          updateDetail.textContent = info.download_error;
+        } else {
+          updateDetail.textContent = `Build ${info.latest_build} ready for direct download`;
+        }
+      }
+      if (btnBannerDownload) btnBannerDownload.hidden = !info.download_url || info.download_status === "ready";
+      if (btnBannerOpen) btnBannerOpen.hidden = info.download_status !== "ready";
+    } else if (banner && !info.update_available) {
+      banner.hidden = true;
+    }
+  }
+
+  async function triggerUpdateDownload(btn) {
+    if (btn) btn.disabled = true;
+    if (updateDetail) updateDetail.textContent = "Downloading and checking SHA-256 checksum…";
+    if (settingsUpdateStatus) settingsUpdateStatus.textContent = "Downloading and checking SHA-256 checksum…";
+    try {
+      const res = await fetch("/api/system/download-update", { method: "POST" });
+      if (res.ok) renderUpdateState(await res.json());
+    } catch (_e) {
+      if (updateDetail) updateDetail.textContent = "Download unavailable right now.";
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  if (banner || settingsUpdateStatus) {
+    fetch("/api/system/update-status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) renderUpdateState(data);
+      })
+      .catch(() => {});
+  }
+
+  if (btnSettingsCheck) {
+    btnSettingsCheck.addEventListener("click", async () => {
+      btnSettingsCheck.disabled = true;
+      if (settingsUpdateStatus) settingsUpdateStatus.textContent = "Checking for updates…";
+      try {
+        const res = await fetch("/api/system/check-updates", { method: "POST" });
+        if (res.ok) renderUpdateState(await res.json());
+      } catch (_e) {
+        if (settingsUpdateStatus) settingsUpdateStatus.textContent = "Unable to check updates while offline.";
+      } finally {
+        btnSettingsCheck.disabled = false;
+      }
+    });
+  }
+
+  if (btnSettingsDownload) btnSettingsDownload.addEventListener("click", () => triggerUpdateDownload(btnSettingsDownload));
+  if (btnBannerDownload) btnBannerDownload.addEventListener("click", () => triggerUpdateDownload(btnBannerDownload));
+  if (btnBannerOpen) {
+    btnBannerOpen.addEventListener("click", async () => {
+      try { await fetch("/api/system/open-download", { method: "POST" }); } catch (_e) {}
+    });
+  }
+  if (btnBannerDismiss && banner) {
+    btnBannerDismiss.addEventListener("click", () => {
+      banner.hidden = true;
+      fetch("/api/system/update-status")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d && d.latest_build) sessionStorage.setItem("fp_dismiss_update_" + d.latest_build, "1");
+        })
+        .catch(() => {});
+    });
+  }
+
+  // Hidden 5-tap Operator Sync Console trigger
+  const opDialog = document.getElementById("operatorSyncDialog");
+  const opStatusBox = document.getElementById("operatorSyncStatusBox");
+  const opUrlInput = document.getElementById("operatorSyncUrlInput");
+  const btnCloseOp = document.getElementById("btnCloseOperatorSync");
+  const btnSaveOp = document.getElementById("btnSaveOperatorSync");
+  const btnFlushOp = document.getElementById("btnFlushOperatorSync");
+  const btnClearOp = document.getElementById("btnClearOperatorSync");
+
+  async function refreshOperatorSync() {
+    if (!opStatusBox) return;
+    try {
+      const res = await fetch("/api/system/operator-sync");
+      if (!res.ok) {
+        opStatusBox.textContent = "Operator sync console restricted to local/admin session.";
+        return;
+      }
+      const cfg = await res.json();
+      if (opUrlInput) opUrlInput.value = cfg.override_url || "";
+      const targetLabel = cfg.effective_url || "None (offline local storage only)";
+      const queueLabel = cfg.queue_count ? ` · Queued items: ${cfg.queue_count}` : "";
+      const errLabel = cfg.last_sync_error ? ` · Last error: ${cfg.last_sync_error}` : "";
+      opStatusBox.textContent = `Mode: ${cfg.mode} · Active endpoint: ${targetLabel}${queueLabel}${errLabel}`;
+    } catch (_e) {
+      opStatusBox.textContent = "Unable to read local sync service.";
+    }
+  }
+
+  let secretTaps = 0;
+  let secretTimer = null;
+  document.querySelectorAll("[data-secret-sync-trigger]").forEach((el) => {
+    el.addEventListener("click", () => {
+      secretTaps += 1;
+      if (secretTimer) clearTimeout(secretTimer);
+      secretTimer = setTimeout(() => { secretTaps = 0; }, 2500);
+      if (secretTaps >= 5) {
+        secretTaps = 0;
+        clearTimeout(secretTimer);
+        if (opDialog && typeof opDialog.showModal === "function") {
+          opDialog.showModal();
+          refreshOperatorSync();
+        }
+      }
+    });
+  });
+
+  async function postOperatorAction(action, url) {
+    try {
+      const res = await fetch("/api/system/operator-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, url: url || "" }),
+      });
+      const data = await res.json();
+      if (!res.ok && opStatusBox) {
+        opStatusBox.textContent = data.error || "Action rejected.";
+        return;
+      }
+      refreshOperatorSync();
+    } catch (_e) {
+      if (opStatusBox) opStatusBox.textContent = "Operator sync request failed.";
+    }
+  }
+
+  if (btnCloseOp && opDialog) btnCloseOp.addEventListener("click", () => opDialog.close());
+  if (btnSaveOp) btnSaveOp.addEventListener("click", () => postOperatorAction("save_override", opUrlInput ? opUrlInput.value : ""));
+  if (btnFlushOp) btnFlushOp.addEventListener("click", () => postOperatorAction("flush_now", ""));
+  if (btnClearOp) btnClearOp.addEventListener("click", () => postOperatorAction("clear_override", ""));
 })();

@@ -5,6 +5,10 @@
   const STORAGE_SESSION = "fp_mobile_session_v2";
   const STORAGE_CFG_PREFIX = "fp_mobile_cfg_";
   const STORAGE_WS_PREFIX = "fp_mobile_ws_";
+  const STORAGE_SYNC_TOKENS = "fp_sync_tokens_v2";
+  const STORAGE_SYNC_OUTBOX = "fp_sync_outbox_v2";
+  const STORAGE_SYNC_OVERRIDE = "fp_sync_override_v2";
+  const STORAGE_SYNC_META = "fp_sync_meta_v2";
   const DEFAULT_CFG = { currency: "INR", marginThreshold: 15, anomalyIqr: 1.5 };
 
   let state = {
@@ -19,6 +23,8 @@
     segmentDim: "product",
     segmentMode: "margin",
     anomalyMode: "compare",
+    updateInfo: null,
+    updateDismissed: false,
     charts: {},
   };
 
@@ -778,6 +784,312 @@
     window.scrollTo({ top: 0, behavior: "instant" });
   }
 
+  function readJsonStorage(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (_e) {
+      return fallback;
+    }
+  }
+
+  function writeJsonStorage(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch (_e) {}
+  }
+
+  // Non-blocking HTTP bridge for file:// WebView (falls back to fetch in browser tests)
+  const _nativePending = {};
+  let _nativeReqSeq = 0;
+  window.__fpNativeHttpCb = function (reqId, jsonText) {
+    const resolver = _nativePending[reqId];
+    if (!resolver) return;
+    delete _nativePending[reqId];
+    try {
+      resolver(JSON.parse(jsonText || "{}"));
+    } catch (_e) {
+      resolver({ ok: false, status: 0, error: "Invalid bridge JSON" });
+    }
+  };
+
+  function callCentralApi(method, path, bodyObj, token) {
+    const base = getEffectiveSyncUrl();
+    if (!base) return Promise.resolve({ ok: false, status: 0, error: "Offline local mode" });
+    const fullUrl = base.replace(/\/+$/, "") + path;
+    if (window.AndroidBridge && window.AndroidBridge.nativeHttpAsync) {
+      return new Promise((resolve) => {
+        const reqId = "req_" + (++_nativeReqSeq);
+        const timer = setTimeout(() => {
+          if (_nativePending[reqId]) {
+            delete _nativePending[reqId];
+            resolve({ ok: false, status: 0, error: "Sync request timed out" });
+          }
+        }, 12000);
+        _nativePending[reqId] = (res) => {
+          clearTimeout(timer);
+          resolve(res);
+        };
+        window.AndroidBridge.nativeHttpAsync(
+          reqId,
+          method,
+          fullUrl,
+          bodyObj ? JSON.stringify(bodyObj) : "",
+          token || ""
+        );
+      });
+    }
+    const headers = { "Accept": "application/json" };
+    if (bodyObj) headers["Content-Type"] = "application/json";
+    if (token) headers["Authorization"] = "Bearer " + token;
+    return fetch(fullUrl, {
+      method,
+      headers,
+      body: bodyObj ? JSON.stringify(bodyObj) : undefined,
+    })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        return { ok: r.ok, status: r.status, data };
+      })
+      .catch((err) => ({ ok: false, status: 0, error: err && err.message ? err.message : "Network error" }));
+  }
+
+  function getBridgeSyncStatus() {
+    if (window.AndroidBridge && window.AndroidBridge.getSyncStatusJson) {
+      try {
+        return JSON.parse(window.AndroidBridge.getSyncStatusJson() || "{}");
+      } catch (_e) {}
+    }
+    const localOverride = localStorage.getItem(STORAGE_SYNC_OVERRIDE) || "";
+    return {
+      overrideUrl: localOverride,
+      manifestSyncUrl: "",
+      effectiveUrl: localOverride,
+      mode: localOverride ? "Manual override" : "Offline local",
+    };
+  }
+
+  function getEffectiveSyncUrl() {
+    return (getBridgeSyncStatus().effectiveUrl || "").trim();
+  }
+
+  function getSyncToken(email) {
+    const map = readJsonStorage(STORAGE_SYNC_TOKENS, {});
+    return map[String(email || "").toLowerCase().trim()] || "";
+  }
+
+  function setSyncToken(email, token) {
+    const map = readJsonStorage(STORAGE_SYNC_TOKENS, {});
+    const k = String(email || "").toLowerCase().trim();
+    if (token) map[k] = token;
+    else delete map[k];
+    writeJsonStorage(STORAGE_SYNC_TOKENS, map);
+  }
+
+  function markUserSynced(email, flag) {
+    const users = readUsers();
+    const k = String(email || "").toLowerCase().trim();
+    let changed = false;
+    users.forEach((u) => {
+      if (u.email === k) {
+        u.syncedToServer = Boolean(flag);
+        changed = true;
+      }
+    });
+    if (changed) writeUsers(users);
+  }
+
+  let flushingOutbox = false;
+  async function flushSyncOutbox() {
+    if (flushingOutbox) return;
+    const base = getEffectiveSyncUrl();
+    if (!base) return;
+    const queue = readJsonStorage(STORAGE_SYNC_OUTBOX, []);
+    if (!Array.isArray(queue) || !queue.length) return;
+    flushingOutbox = true;
+    const remaining = [];
+    const meta = readJsonStorage(STORAGE_SYNC_META, {});
+    try {
+      for (let i = 0; i < queue.length; i++) {
+        const item = queue[i];
+        const token = getSyncToken(item.email);
+        if (!token) {
+          remaining.push(item);
+          continue;
+        }
+        const res = await callCentralApi(
+          "POST",
+          "/api/v1/sync/import",
+          {
+            filename: item.filename,
+            client_import_id: item.id,
+            platform: "android",
+            rows: item.rows,
+          },
+          token
+        );
+        if (res.ok) {
+          meta.lastSyncAt = new Date().toLocaleTimeString();
+          meta.lastError = "";
+        } else {
+          meta.lastError = (res.data && res.data.error) || res.error || ("HTTP " + res.status);
+          remaining.push(item);
+        }
+      }
+      writeJsonStorage(STORAGE_SYNC_OUTBOX, remaining);
+      writeJsonStorage(STORAGE_SYNC_META, meta);
+    } finally {
+      flushingOutbox = false;
+      renderOperatorSyncStatus();
+    }
+  }
+
+  function queueDatasetSync(email, filename, rows) {
+    if (!email || !Array.isArray(rows) || !rows.length) return;
+    const queue = readJsonStorage(STORAGE_SYNC_OUTBOX, []);
+    const arr = Array.isArray(queue) ? queue : [];
+    const clientImportId = "mob-" + Date.now() + "-" + rows.length;
+    arr.push({
+      id: clientImportId,
+      email: email.toLowerCase().trim(),
+      filename: filename || "mobile_import.csv",
+      rows: rows.slice(0, 10000),
+      queuedAt: new Date().toISOString(),
+    });
+    writeJsonStorage(STORAGE_SYNC_OUTBOX, arr.slice(-20));
+    flushSyncOutbox();
+  }
+
+  async function syncAuthWithCentral(mode, name, email, password) {
+    if (!getEffectiveSyncUrl()) return;
+    const endpoint = mode === "register" ? "/api/v1/auth/register" : "/api/v1/auth/login";
+    const res = await callCentralApi("POST", endpoint, {
+      name,
+      email,
+      password,
+      platform: "android",
+    });
+    const meta = readJsonStorage(STORAGE_SYNC_META, {});
+    if (res.ok && res.data && res.data.token) {
+      setSyncToken(email, res.data.token);
+      markUserSynced(email, true);
+      meta.lastSyncAt = new Date().toLocaleTimeString();
+      meta.lastError = "";
+      writeJsonStorage(STORAGE_SYNC_META, meta);
+      flushSyncOutbox();
+    } else if (res.error || (res.data && res.data.error)) {
+      meta.lastError = (res.data && res.data.error) || res.error;
+      writeJsonStorage(STORAGE_SYNC_META, meta);
+    }
+    renderOperatorSyncStatus();
+  }
+
+  function renderUpdateUi(info) {
+    if (!info || typeof info !== "object") return;
+    state.updateInfo = info;
+    const verBtn = document.getElementById("aboutSecretTrigger");
+    if (verBtn && info.activeOtaVersion) {
+      verBtn.textContent = "Engine v" + info.activeOtaVersion + " · Offline & Auto-Sync Ready";
+    }
+    const statusBox = document.getElementById("appUpdateStatus");
+    const perfBtn = document.getElementById("btnPerformUpdate");
+    const banner = document.getElementById("updateActionBanner");
+    const bannerTitle = document.getElementById("updateBannerTitle");
+    const bannerSub = document.getElementById("updateBannerSub");
+    const bannerBtn = document.getElementById("btnBannerUpdateNow");
+
+    const hasApk = Boolean(info.apkUpdateAvailable);
+    const hasOta = Boolean(info.otaReadyToReload);
+    const hasAny = hasApk || hasOta;
+
+    if (statusBox) {
+      if (info.checking) {
+        statusBox.textContent = "Checking for updates…";
+      } else if (info.downloadStatus === "downloading") {
+        statusBox.textContent = "Downloading and verifying APK update…";
+      } else if (hasOta) {
+        statusBox.textContent = "Instant update v" + info.latestOtaVersion + " downloaded and verified. Reload to activate.";
+      } else if (hasApk) {
+        statusBox.textContent = "New app version v" + info.latestVersion + " available for direct in-app install.";
+      } else if (info.error) {
+        statusBox.textContent = "Version " + (info.installedVersion || "1.1.0") + " · Offline mode";
+      } else if (info.checked) {
+        statusBox.textContent = "Up to date (v" + (info.installedVersion || "1.1.0") + ")";
+      } else {
+        statusBox.textContent = "Version " + (info.installedVersion || "1.1.0") + " · Offline-Ready";
+      }
+    }
+
+    if (perfBtn) {
+      perfBtn.classList.toggle("hidden", !hasAny);
+      perfBtn.textContent = hasOta ? "Reload now" : (hasApk ? "Install update" : "Install update");
+    }
+
+    if (banner) {
+      const showBanner = hasAny && !state.updateDismissed;
+      banner.classList.toggle("hidden", !showBanner);
+      if (showBanner) {
+        if (hasOta) {
+          if (bannerTitle) bannerTitle.textContent = "Update ready";
+          if (bannerSub) bannerSub.textContent = "New interface updates downloaded cleanly";
+          if (bannerBtn) bannerBtn.textContent = "Reload";
+        } else {
+          if (bannerTitle) bannerTitle.textContent = "Version " + info.latestVersion + " available";
+          if (bannerSub) bannerSub.textContent = "Install update directly inside this app";
+          if (bannerBtn) bannerBtn.textContent = "Update";
+        }
+      }
+    }
+  }
+
+  function applyPendingUpdate() {
+    const info = state.updateInfo || {};
+    if (info.otaReadyToReload && window.AndroidBridge && window.AndroidBridge.applyOtaNow) {
+      window.AndroidBridge.applyOtaNow();
+      return;
+    }
+    if (info.apkUpdateAvailable && window.AndroidBridge && window.AndroidBridge.installApkUpdate) {
+      showNotice("Downloading verified APK update package…");
+      window.AndroidBridge.installApkUpdate();
+      return;
+    }
+    showNotice("Already running the latest version.");
+  }
+
+  window.onNativeUpdateState = function (jsonText) {
+    try {
+      const parsed = typeof jsonText === "string" ? JSON.parse(jsonText) : jsonText;
+      renderUpdateUi(parsed);
+      const opModalEl = document.getElementById("hiddenOperatorModal");
+      if (opModalEl && !opModalEl.classList.contains("hidden")) {
+        renderOperatorSyncStatus();
+      }
+      if (parsed && parsed.effectiveSyncUrl && state.user) {
+        flushSyncOutbox();
+      }
+    } catch (_e) {}
+  };
+
+  function renderOperatorSyncStatus() {
+    const statusEl = document.getElementById("opSyncStatus");
+    const urlEl = document.getElementById("opSyncUrlInput");
+    if (!statusEl) return;
+    const bridge = getBridgeSyncStatus();
+    if (urlEl && document.activeElement !== urlEl) {
+      urlEl.value = bridge.overrideUrl || "";
+    }
+    const queue = readJsonStorage(STORAGE_SYNC_OUTBOX, []);
+    const qLen = Array.isArray(queue) ? queue.length : 0;
+    const meta = readJsonStorage(STORAGE_SYNC_META, {});
+    const endpointText = bridge.effectiveUrl || "Not configured (local offline storage)";
+    const lastSyncText = meta.lastSyncAt ? " · Last sync: " + meta.lastSyncAt : "";
+    const errText = meta.lastError ? " · Note: " + meta.lastError : "";
+    statusEl.textContent =
+      "Mode: " + bridge.mode +
+      " · Endpoint: " + endpointText +
+      " · Pending queue: " + qLen +
+      lastSyncText +
+      errText;
+  }
+
   function renderAll() {
     syncChrome();
     if (state.view !== "workspace") return;
@@ -794,8 +1106,12 @@
     document.getElementById("cfgCurrency").value = state.cfg.currency;
     document.getElementById("cfgMargin").value = state.cfg.marginThreshold;
     document.getElementById("cfgIqr").value = state.cfg.anomalyIqr;
-    if (window.AndroidBridge && window.AndroidBridge.getSavedServer) {
-      document.getElementById("serverUrlInput").value = window.AndroidBridge.getSavedServer() || "";
+    if (window.AndroidBridge && window.AndroidBridge.getUpdateStatusJson && !state.updateInfo) {
+      try {
+        renderUpdateUi(JSON.parse(window.AndroidBridge.getUpdateStatusJson() || "{}"));
+      } catch (_e) {}
+    } else if (state.updateInfo) {
+      renderUpdateUi(state.updateInfo);
     }
 
     if (state.activeTab === "overview") renderOverview();
@@ -834,7 +1150,9 @@
 
   function loadSampleIntoWorkspace() {
     if (window.FINANCE_PULSE_SAMPLE_CSV) {
-      saveWorkspace(parseCsv(window.FINANCE_PULSE_SAMPLE_CSV), "finance_pulse_sample.csv");
+      const parsed = parseCsv(window.FINANCE_PULSE_SAMPLE_CSV);
+      saveWorkspace(parsed, "finance_pulse_sample.csv");
+      if (state.user) queueDatasetSync(state.user.email, "finance_pulse_sample.csv", parsed);
       switchTab("overview");
       showNotice("Loaded 30-month sample dataset (120 transactions).");
     }
@@ -852,25 +1170,6 @@
     document.getElementById("tabBtnRegister").addEventListener("click", () => openAuth("register"));
     document.getElementById("tabBtnLogin").addEventListener("click", () => openAuth("login"));
 
-    document.getElementById("btnLandingServer").addEventListener("click", () => {
-      document.getElementById("landingServerPanel").classList.toggle("hidden");
-    });
-    document.getElementById("btnCloseLandingServer").addEventListener("click", () => {
-      document.getElementById("landingServerPanel").classList.add("hidden");
-    });
-    document.getElementById("btnLandingConnectServer").addEventListener("click", () => {
-      const url = document.getElementById("landingServerUrlInput").value.trim();
-      const status = document.getElementById("landingServerStatus");
-      if (window.AndroidBridge && window.AndroidBridge.connectServer) {
-        const ok = window.AndroidBridge.connectServer(url);
-        if (!ok) status.textContent = "Enter a valid http:// or https:// URL.";
-      } else if (url) {
-        status.textContent = "Server bridge activates inside the installed Android APK (" + url + ").";
-      } else {
-        status.textContent = "Enter a valid http:// or https:// server address.";
-      }
-    });
-
     const handleSampleDownload = () => {
       if (window.FINANCE_PULSE_SAMPLE_CSV) {
         downloadCsvFile("finance_pulse_sample.csv", window.FINANCE_PULSE_SAMPLE_CSV);
@@ -879,7 +1178,7 @@
     document.getElementById("btnDownloadSample").addEventListener("click", handleSampleDownload);
     document.getElementById("btnEmptyDownloadSample").addEventListener("click", handleSampleDownload);
 
-    document.getElementById("authForm").addEventListener("submit", (ev) => {
+    document.getElementById("authForm").addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const errEl = document.getElementById("authErrorBox");
       const name = document.getElementById("authName").value.trim();
@@ -905,6 +1204,7 @@
           email,
           hash: hashSecret(email, password),
           createdAt: new Date().toISOString(),
+          syncedToServer: false,
         };
         users.push(record);
         writeUsers(users);
@@ -917,8 +1217,28 @@
         document.getElementById("authForm").reset();
         errEl.classList.add("hidden");
         renderAll();
+        syncAuthWithCentral("register", name, email, password);
       } else {
-        const existing = users.find((u) => u.email === email);
+        let existing = users.find((u) => u.email === email);
+        if (!existing && getEffectiveSyncUrl()) {
+          const remoteRes = await callCentralApi("POST", "/api/v1/auth/login", {
+            email,
+            password,
+            platform: "android",
+          });
+          if (remoteRes.ok && remoteRes.data && remoteRes.data.user) {
+            existing = {
+              name: remoteRes.data.user.name || email.split("@")[0],
+              email,
+              hash: hashSecret(email, password),
+              createdAt: new Date().toISOString(),
+              syncedToServer: true,
+            };
+            users.push(existing);
+            writeUsers(users);
+            if (remoteRes.data.token) setSyncToken(email, remoteRes.data.token);
+          }
+        }
         if (!existing || existing.hash !== hashSecret(email, password)) {
           return fail("Invalid email or password.");
         }
@@ -931,6 +1251,7 @@
         document.getElementById("authForm").reset();
         errEl.classList.add("hidden");
         renderAll();
+        syncAuthWithCentral(existing.syncedToServer === false ? "register" : "login", existing.name, email, password);
       }
     });
 
@@ -1001,6 +1322,7 @@
         ev.target.value = "";
         if (parsed.length) {
           saveWorkspace(parsed, file.name);
+          if (state.user) queueDatasetSync(state.user.email, file.name, parsed);
           switchTab("overview");
           showNotice("Imported " + parsed.length + " records from " + file.name + ".");
         } else {
@@ -1029,16 +1351,105 @@
       showNotice("Updated local analytical thresholds.");
     });
 
-    document.getElementById("btnConnectServer").addEventListener("click", () => {
-      const url = document.getElementById("serverUrlInput").value.trim();
-      const status = document.getElementById("serverStatus");
-      if (window.AndroidBridge && window.AndroidBridge.connectServer) {
-        const ok = window.AndroidBridge.connectServer(url);
-        if (!ok) status.textContent = "Enter a valid http:// or https:// URL.";
-      } else if (url) {
-        status.textContent = "Server bridge available when installed as Android APK (" + url + ").";
+    document.getElementById("btnCheckUpdates").addEventListener("click", () => {
+      const box = document.getElementById("appUpdateStatus");
+      if (box) box.textContent = "Checking for updates…";
+      if (window.AndroidBridge && window.AndroidBridge.checkForUpdates) {
+        window.AndroidBridge.checkForUpdates();
       } else {
-        status.textContent = "Enter a valid http:// or https:// URL.";
+        setTimeout(() => {
+          if (box) box.textContent = "Version 1.1.0 · Direct update check runs inside the installed Android APK.";
+        }, 120);
+      }
+    });
+    document.getElementById("btnPerformUpdate").addEventListener("click", applyPendingUpdate);
+    document.getElementById("btnBannerUpdateNow").addEventListener("click", applyPendingUpdate);
+    document.getElementById("btnBannerDismiss").addEventListener("click", () => {
+      state.updateDismissed = true;
+      document.getElementById("updateActionBanner").classList.add("hidden");
+    });
+
+    // Hidden 5-tap Operator Sync Console trigger (only owner knows to tap version footer 5 times)
+    const opModal = document.getElementById("hiddenOperatorModal");
+    let secretTapCount = 0;
+    let secretTapTimer = null;
+    document.getElementById("aboutSecretTrigger").addEventListener("click", () => {
+      secretTapCount += 1;
+      if (secretTapTimer) clearTimeout(secretTapTimer);
+      secretTapTimer = setTimeout(() => { secretTapCount = 0; }, 2500);
+      if (secretTapCount >= 5) {
+        secretTapCount = 0;
+        clearTimeout(secretTapTimer);
+        renderOperatorSyncStatus();
+        opModal.classList.remove("hidden");
+      }
+    });
+
+    document.getElementById("btnOpClose").addEventListener("click", () => opModal.classList.add("hidden"));
+    opModal.addEventListener("click", (ev) => {
+      if (ev.target === opModal) opModal.classList.add("hidden");
+    });
+    document.getElementById("btnOpSaveSync").addEventListener("click", async () => {
+      let url = document.getElementById("opSyncUrlInput").value.trim();
+      const statusBox = document.getElementById("opSyncStatus");
+      const lower = url.toLowerCase();
+      if (!url || lower.startsWith("javascript:") || lower.startsWith("data:") || lower.startsWith("vbscript:") || lower.startsWith("file:")) {
+        statusBox.textContent = "Enter a valid http:// or https:// server address.";
+        return;
+      }
+      if (url.indexOf("://") === -1) {
+        const isLocalOrIp = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[::1\])/i.test(url) || url.indexOf(":") !== -1;
+        url = (isLocalOrIp ? "http://" : "https://") + url;
+      }
+      url = url.replace(/\/+$/, "");
+      if (!/^https?:\/\/[^/\s]+/i.test(url)) {
+        statusBox.textContent = "Enter a valid http:// or https:// server address.";
+        return;
+      }
+      if (window.AndroidBridge && window.AndroidBridge.setSyncOverrideUrl) {
+        if (!window.AndroidBridge.setSyncOverrideUrl(url)) {
+          statusBox.textContent = "Invalid server URL.";
+          return;
+        }
+      } else {
+        localStorage.setItem(STORAGE_SYNC_OVERRIDE, url);
+      }
+      document.getElementById("opSyncUrlInput").value = url;
+      statusBox.textContent = "Testing connection to " + url + "…";
+      const health = await callCentralApi("GET", "/health");
+      if (health.ok && health.data && health.data.status === "ok") {
+        await flushSyncOutbox();
+        renderOperatorSyncStatus();
+        if (state.user && !getSyncToken(state.user.email)) {
+          statusBox.textContent += " · Re-sign in once to link offline account.";
+        } else {
+          statusBox.textContent = "Connected (" + (health.data.app || "Server") + " v" + (health.data.version || "") + ") · Sync active.";
+        }
+      } else {
+        renderOperatorSyncStatus();
+      }
+      showNotice("Operator sync endpoint saved.");
+    });
+    document.getElementById("btnOpResetSync").addEventListener("click", () => {
+      if (window.AndroidBridge && window.AndroidBridge.setSyncOverrideUrl) {
+        window.AndroidBridge.setSyncOverrideUrl("");
+      } else {
+        localStorage.removeItem(STORAGE_SYNC_OVERRIDE);
+      }
+      document.getElementById("opSyncUrlInput").value = "";
+      renderOperatorSyncStatus();
+      flushSyncOutbox();
+    });
+    document.getElementById("btnOpOpenFullView").addEventListener("click", () => {
+      const targetUrl = document.getElementById("opSyncUrlInput").value.trim() || getEffectiveSyncUrl();
+      if (!targetUrl) {
+        document.getElementById("opSyncStatus").textContent = "Set or wait for an automatic server URL first.";
+        return;
+      }
+      if (window.AndroidBridge && window.AndroidBridge.connectServer) {
+        window.AndroidBridge.connectServer(targetUrl);
+      } else {
+        document.getElementById("opSyncStatus").textContent = "Full web portal redirect activates inside the Android APK (" + targetUrl + ").";
       }
     });
 

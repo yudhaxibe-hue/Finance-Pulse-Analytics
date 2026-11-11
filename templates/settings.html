@@ -38,9 +38,23 @@
 
     <div class="panel-head" style="margin-bottom: 10px;">
       <div>
+        <h2>Software updates</h2>
+        <p>Check for verified {{ app_name }} updates directly inside the app.</p>
+      </div>
+      <div class="header-actions">
+        <button type="button" class="button secondary" id="btnSettingsCheckUpdate" data-check-updates>Check for updates</button>
+        <button type="button" class="button" id="btnSettingsDownloadUpdate" hidden>Download update</button>
+      </div>
+    </div>
+    <p class="panel-copy" id="settingsUpdateStatus">Installed: v{{ app_version }} (Build {{ app_build }}).</p>
+
+    <hr>
+
+    <div class="panel-head" style="margin-bottom: 10px;">
+      <div>
         <h2>About</h2>
       </div>
     </div>
-    <p class="panel-copy"><strong>{{ app_title }}</strong> (v{{ app_version }}) · Runs locally with Flask, SQLite, Pandas, NumPy, ReportLab, and Chart.js.</p>
+    <p class="panel-copy"><strong>{{ app_title }}</strong> (<button type="button" class="secret-version-btn" data-secret-sync-trigger>v{{ app_version }}</button>) · Runs locally with Flask, SQLite, Pandas, NumPy, ReportLab, and Chart.js.</p>
   </section>
 {% endblock %}

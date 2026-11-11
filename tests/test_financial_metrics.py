@@ -475,5 +475,313 @@ class LauncherAndPackagingTests(IsolatedDBTestCase):
             self.assertGreater(fpath.stat().st_size, 1024)
 
 
+class SyncAndUpdaterTests(IsolatedDBTestCase):
+    def setUp(self):
+        super().setUp()
+        self._orig_data_dir = config.DATA_DIR
+        self._orig_manifest_url = config.UPDATE_MANIFEST_URL
+        self._orig_default_sync = config.DEFAULT_SYNC_URL
+        config.DATA_DIR = Path(self._tmpdir.name) / "appdata"
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        config.DEFAULT_SYNC_URL = ""
+        import updater
+        updater._SYNC_RUNTIME["tokens"].clear()
+        updater._SYNC_RUNTIME["last_sync_at"] = ""
+        updater._SYNC_RUNTIME["last_sync_ok"] = None
+        updater._SYNC_RUNTIME["last_sync_error"] = ""
+
+    def tearDown(self):
+        config.DATA_DIR = self._orig_data_dir
+        config.UPDATE_MANIFEST_URL = self._orig_manifest_url
+        config.DEFAULT_SYNC_URL = self._orig_default_sync
+        super().tearDown()
+
+    def test_updater_semver_url_and_manifest_parsing(self):
+        import updater
+
+        self.assertEqual(updater.parse_semver("1.2.10+45"), (1, 2, 10))
+        self.assertTrue(updater.is_update_available("1.1.0", 2, "1.1.0", 12))
+        self.assertFalse(updater.is_update_available("1.1.0", 12, "1.1.0", 12))
+        self.assertFalse(updater.is_update_available("1.2.0", 2, "1.1.0", 2))
+        self.assertTrue(updater.is_update_available("1.1.0", 2, "1.2.0", None))
+
+        self.assertEqual(updater.normalize_http_url("https://example.com/"), "https://example.com")
+        self.assertEqual(updater.normalize_http_url("sync.example.com"), "https://sync.example.com")
+        self.assertIsNone(updater.normalize_http_url("javascript:alert(1)"))
+        self.assertIsNone(updater.normalize_http_url("file:///etc/passwd"))
+        self.assertIsNone(updater.normalize_http_url("   "))
+
+        self.assertTrue(updater._is_self_url("http://127.0.0.1:8000", 8000))
+        self.assertFalse(updater._is_self_url("http://127.0.0.1:9000", 8000))
+
+        parsed = updater.parse_manifest_dict({
+            "version": "1.5.0",
+            "build_number": 99,
+            "sync_server_url": "https://hub.example.com/",
+            "macos": {"version": "1.5.0", "build_number": 99, "url": "https://hub.example.com/mac.zip", "sha256": "ABCD"},
+            "windows": {"version": "1.5.0", "build_number": 99, "url": "https://hub.example.com/win.zip", "sha256": "EF01"},
+        })
+        self.assertTrue(parsed["update_available"])
+        self.assertEqual(parsed["sync_server_url"], "https://hub.example.com")
+        self.assertEqual(parsed["latest_build"], 99)
+
+        ok, norm = updater.set_sync_override("http://192.168.1.55:8000/")
+        self.assertTrue(ok)
+        self.assertEqual(norm, "http://192.168.1.55:8000")
+        self.assertEqual(updater.get_sync_config()["mode"], "Manual override")
+        ok_bad, _ = updater.set_sync_override("javascript:alert(1)")
+        self.assertFalse(ok_bad)
+        updater.set_sync_override("")
+        self.assertEqual(updater.get_sync_config()["mode"], "Offline local")
+
+    def test_update_check_over_http_populates_manifest_sync_and_state(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        import updater
+
+        payload = {
+            "version": "9.9.0",
+            "build_number": 999,
+            "sync_server_url": "https://sync.financepulse.example",
+            "macos": {"version": "9.9.0", "build_number": 999, "url": "https://sync.financepulse.example/mac.zip", "sha256": "00" * 32},
+            "windows": {"version": "9.9.0", "build_number": 999, "url": "https://sync.financepulse.example/win.zip", "sha256": "00" * 32},
+        }
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = json.dumps(payload).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                return
+
+        srv = HTTPServer(("127.0.0.1", 0), Handler)
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            config.UPDATE_MANIFEST_URL = f"http://127.0.0.1:{srv.server_port}/version.json"
+            status = updater.check_for_updates(timeout=3.0)
+            self.assertTrue(status["checked"])
+            self.assertEqual(status["error"], "")
+            self.assertTrue(status["update_available"])
+            self.assertEqual(status["latest_build"], 999)
+            self.assertEqual(updater.get_sync_config()["effective_url"], "https://sync.financepulse.example")
+            self.assertEqual(updater.get_sync_config()["mode"], "Automatic manifest")
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_sync_api_auth_import_dedup_and_admin_visibility(self):
+        client = app.app.test_client()
+
+        # CORS preflight on /api/v1/auth/register & /health
+        opt = client.options("/api/v1/auth/register")
+        self.assertEqual(opt.status_code, 204)
+        self.assertEqual(opt.headers.get("Access-Control-Allow-Origin"), "*")
+
+        # Register validation & creation
+        bad_reg = client.post("/api/v1/auth/register", json={"name": "A", "email": "bad", "password": "123"})
+        self.assertEqual(bad_reg.status_code, 400)
+
+        reg = client.post(
+            "/api/v1/auth/register",
+            json={"name": "Mobile Mia", "email": "mia@example.com", "password": "secret12", "platform": "android"},
+        )
+        self.assertEqual(reg.status_code, 201)
+        reg_json = reg.get_json()
+        self.assertTrue(reg_json["ok"])
+        token = reg_json["token"]
+
+        # Idempotent re-register with matching password returns 200; mismatch returns 409
+        re_reg = client.post(
+            "/api/v1/auth/register",
+            json={"name": "Mobile Mia", "email": "mia@example.com", "password": "secret12", "platform": "android"},
+        )
+        self.assertEqual(re_reg.status_code, 200)
+        conflict = client.post(
+            "/api/v1/auth/register",
+            json={"name": "Mobile Mia", "email": "mia@example.com", "password": "wrongpassword", "platform": "android"},
+        )
+        self.assertEqual(conflict.status_code, 409)
+
+        # Login & tampered token rejection
+        login_res = client.post("/api/v1/auth/login", json={"email": "mia@example.com", "password": "secret12"})
+        self.assertEqual(login_res.status_code, 200)
+        self.assertEqual(client.get("/api/v1/sync/status").status_code, 401)
+        self.assertEqual(
+            client.get("/api/v1/sync/status", headers={"Authorization": "Bearer tampered.token.val"}).status_code,
+            401,
+        )
+
+        # Sync import using Android txn_date payload & idempotency dedup
+        sample_rows = [
+            {
+                "txn_date": "2025-01-10",
+                "product": "Insight Pro",
+                "department": "Engineering",
+                "category": "SaaS",
+                "region": "North",
+                "revenue": 2500.0,
+                "expense": 900.0,
+                "cost": 300.0,
+                "investment": 50.0,
+            },
+            {
+                "txn_date": "2025-02-10",
+                "product": "Core Suite",
+                "department": "Sales",
+                "category": "Enterprise",
+                "region": "West",
+                "revenue": 1500.0,
+                "expense": 600.0,
+                "cost": 200.0,
+                "investment": 0.0,
+            },
+        ]
+        imp1 = client.post(
+            "/api/v1/sync/import",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "filename": "android_ledger.csv",
+                "client_import_id": "mob-dedup-001",
+                "platform": "android",
+                "rows": sample_rows,
+            },
+        )
+        self.assertEqual(imp1.status_code, 201)
+        self.assertEqual(imp1.get_json()["rows_imported"], 2)
+
+        # Second identical POST with same client_import_id must deduplicate
+        imp2 = client.post(
+            "/api/v1/sync/import",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "filename": "android_ledger.csv",
+                "client_import_id": "mob-dedup-001",
+                "platform": "android",
+                "rows": sample_rows,
+            },
+        )
+        self.assertEqual(imp2.status_code, 200)
+        self.assertTrue(imp2.get_json()["duplicate"])
+
+        st = client.get("/api/v1/sync/status", headers={"Authorization": f"Bearer {token}"}).get_json()
+        self.assertEqual(st["datasets"], 1)
+        self.assertEqual(st["records"], 2)
+
+        # Create admin via loopback /admin/setup & verify admin portal shows synced mobile records
+        self.assertIn(b"Set up administrator account", client.get("/admin/login").data)
+        setup_res = client.post(
+            "/admin/setup",
+            data={"name": "Owner Admin", "email": "owner@financepulse.local", "password": "ownerpassword123"},
+            follow_redirects=True,
+        )
+        self.assertEqual(setup_res.status_code, 200)
+        self.assertIn(b"Admin Portal", setup_res.data)
+        self.assertIn(b"Mobile Mia", client.get("/admin/users").data)
+        self.assertIn(b"android_ledger.csv", client.get("/admin/datasets").data)
+
+        # Once admin exists, /admin/setup is permanently locked (403)
+        self.assertEqual(client.get("/admin/setup").status_code, 403)
+        self.assertEqual(
+            client.post("/admin/setup", data={"name": "X", "email": "x@x.com", "password": "password123"}).status_code,
+            403,
+        )
+
+    def test_security_boundaries_loopback_vs_proxied_and_operator_sync(self):
+        client = app.app.test_client()
+
+        # Simulate external proxied visitor (e.g. cloudflared tunnel) trying first-time /admin/setup -> must be 403
+        proxied_setup = client.get("/admin/setup", headers={"X-Forwarded-For": "203.0.113.5"})
+        self.assertEqual(proxied_setup.status_code, 403)
+        cf_setup = client.get("/admin/setup", headers={"CF-Connecting-IP": "198.51.100.2"})
+        self.assertEqual(cf_setup.status_code, 403)
+
+        # Simulated remote unauthenticated visitor cannot access /api/system/operator-sync -> 403
+        remote_op = client.get("/api/system/operator-sync", environ_base={"REMOTE_ADDR": "198.51.100.7"})
+        self.assertEqual(remote_op.status_code, 403)
+        proxied_op = client.post(
+            "/api/system/operator-sync",
+            headers={"X-Forwarded-For": "198.51.100.7"},
+            json={"action": "save_override", "url": "https://evil.example"},
+        )
+        self.assertEqual(proxied_op.status_code, 403)
+
+        # Genuine local operator on loopback CAN read/save/clear sync override
+        op_get = client.get("/api/system/operator-sync")
+        self.assertEqual(op_get.status_code, 200)
+        self.assertTrue(op_get.get_json()["ok"])
+
+        bad_op = client.post("/api/system/operator-sync", json={"action": "save_override", "url": "javascript:1"})
+        self.assertEqual(bad_op.status_code, 400)
+
+        save_op = client.post(
+            "/api/system/operator-sync",
+            json={"action": "save_override", "url": "https://central.financepulse.local"},
+        )
+        self.assertEqual(save_op.status_code, 200)
+        self.assertEqual(save_op.get_json()["override_url"], "https://central.financepulse.local")
+
+        clear_op = client.post("/api/system/operator-sync", json={"action": "clear_override"})
+        self.assertEqual(clear_op.status_code, 200)
+        self.assertEqual(clear_op.get_json()["override_url"], "")
+
+    def test_end_to_end_mirror_sync_across_live_http_server(self):
+        import time
+        import app_launcher
+        import updater
+
+        port = app_launcher.find_free_port("127.0.0.1")
+        srv = app_launcher.FlaskServerThread(app.app, "127.0.0.1", port)
+        srv.start()
+        try:
+            self.assertTrue(app_launcher.wait_for_server("127.0.0.1", port, expected_title=config.APP_TITLE, timeout_sec=8.0))
+            base_url = f"http://127.0.0.1:{port}"
+            ok, _ = updater.set_sync_override(base_url)
+            self.assertTrue(ok)
+
+            # Mirror signup + immediate dataset queue concurrently (no race condition)
+            updater.mirror_auth_event("register", "Mirror User", "mirror@example.com", "strongpass123")
+            updater.mirror_dataset_import(
+                "mirror@example.com",
+                "desktop_sync.csv",
+                "desk-sync-e2e-001",
+                [{
+                    "date": "2025-05-01",
+                    "product": "Enterprise",
+                    "department": "Finance",
+                    "category": "SaaS",
+                    "region": "APAC",
+                    "revenue": 4200.0,
+                    "expense": 1200.0,
+                    "cost": 400.0,
+                    "investment": 100.0,
+                }],
+            )
+
+            deadline = time.time() + 6.0
+            records_cnt = 0
+            while time.time() < deadline:
+                updater.flush_sync_outbox()
+                conn = connect()
+                try:
+                    records_cnt = conn.execute("SELECT COUNT(*) FROM financial_transactions").fetchone()[0]
+                finally:
+                    conn.close()
+                if records_cnt == 1 and updater.get_sync_config()["queue_count"] == 0:
+                    break
+                time.sleep(0.15)
+
+            self.assertEqual(records_cnt, 1)
+            self.assertEqual(updater.get_sync_config()["queue_count"], 0)
+            self.assertTrue((config.DATA_DIR / "sync_tokens.json").is_file())
+        finally:
+            srv.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

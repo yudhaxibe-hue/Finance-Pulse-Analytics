@@ -210,6 +210,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Finance Pulse Analytics Desktop Launcher")
     parser.add_argument("--browser", action="store_true", help="Open in default web browser instead of native desktop window.")
     parser.add_argument("--headless", "--server-only", dest="headless", action="store_true", help="Run embedded WSGI server without GUI.")
+    parser.add_argument("--public", action="store_true", help="Bind to all network interfaces (0.0.0.0) for wireless LAN/tunnel access.")
     parser.add_argument("--admin", action="store_true", help="Open directly in the Administrator Portal (/admin/login).")
     parser.add_argument("--path", default="", help="Initial route path to open (e.g. / or /admin/login).")
     parser.add_argument("--host", default="127.0.0.1", help="Loopback bind host (default: 127.0.0.1).")
@@ -224,6 +225,15 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     return args
 
 
+def _lan_ipv4() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     multiprocessing.freeze_support()
     args = parse_args(argv)
@@ -232,6 +242,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         os.environ["FINANCE_PULSE_DATA_DIR"] = str(Path(args.data_dir).expanduser().resolve())
 
     import config
+    import updater
 
     if args.create_admin:
         email = args.admin_email or os.environ.get("FINANCE_PULSE_ADMIN_EMAIL") or input("Administrator email: ")
@@ -244,7 +255,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         logger.info("Connecting to hosted server: %s", remote_target)
         webview_cache = config.DATA_DIR / ("webview_admin" if args.admin else "webview_user")
         open_native_or_browser(
-            title=config.APP_TITLE,
+            title=config.APP_NAME,
             target_url=remote_target,
             use_browser=args.browser,
             storage_dir=webview_cache,
@@ -253,16 +264,21 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     import app as flask_module
 
-    host = args.host
-    port = args.port if args.port > 0 else find_free_port(host)
-    logger.info("Starting %s on http://%s:%s", config.APP_NAME, host, port)
-    server_thread = FlaskServerThread(flask_module.app, host, port)
+    bind_host = "0.0.0.0" if args.public and args.host == "127.0.0.1" else args.host
+    probe_host = "127.0.0.1" if bind_host == "0.0.0.0" else bind_host
+    port = args.port if args.port > 0 else find_free_port(probe_host)
+    logger.info("Starting %s on http://%s:%s", config.APP_NAME, bind_host, port)
+    if bind_host == "0.0.0.0":
+        logger.info("LAN Wireless Sync URL: http://%s:%s", _lan_ipv4(), port)
+    server_thread = FlaskServerThread(flask_module.app, bind_host, port)
     server_thread.start()
 
-    if not wait_for_server(host, port, expected_title=config.APP_TITLE, timeout_sec=15.0):
-        logger.error("Health check failed on http://%s:%s/health", host, port)
+    if not wait_for_server(probe_host, port, expected_title=config.APP_TITLE, timeout_sec=15.0):
+        logger.error("Health check failed on http://%s:%s/health", probe_host, port)
         server_thread.stop()
         return 1
+
+    updater.start_background_update_check()
 
     def _shutdown(*_args):
         server_thread.stop()
@@ -270,7 +286,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     signal.signal(signal.SIGTERM, _shutdown)
 
     if args.headless:
-        print(f"READY http://{host}:{port}{start_path}", flush=True)
+        print(f"READY http://{probe_host}:{port}{start_path}", flush=True)
         try:
             while server_thread.is_alive():
                 time.sleep(0.4)
@@ -280,10 +296,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             server_thread.stop()
         return 0
 
-    target_url = f"http://{host}:{port}{start_path}"
+    target_url = f"http://{probe_host}:{port}{start_path}"
     webview_cache = config.DATA_DIR / ("webview_admin" if args.admin else "webview_user")
     open_native_or_browser(
-        title=config.APP_TITLE,
+        title=config.APP_NAME,
         target_url=target_url,
         use_browser=args.browser,
         storage_dir=webview_cache,

@@ -660,6 +660,68 @@ input[type="range"] {
   color: var(--ink-secondary);
   line-height: 1.5;
 }
+.about-version-btn {
+  display: inline-block;
+  margin: 10px 0 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  text-align: left;
+  cursor: default;
+  user-select: none;
+}
+
+.update-toast {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  border: 1px solid rgba(0, 102, 204, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.update-toast-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.update-toast-text strong {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.update-toast-text span {
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+}
+.update-toast-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.operator-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(29, 29, 31, 0.44);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.operator-sheet {
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 24px 60px rgba(29, 29, 31, 0.22);
+}
 
 /* Native Android Bottom Navigation Bar */
 .bottom-nav {

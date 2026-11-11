@@ -7,8 +7,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -27,24 +29,27 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
-    private static final String PREFS_NAME = "finance_pulse_prefs";
-    private static final String KEY_SERVER_URL = "server_url";
     private static final int FILE_CHOOSER_REQUEST_CODE = 1001;
 
     private WebView webView;
     private Button returnOfflineBtn;
     private ValueCallback<Uri[]> filePathCallback;
+    private AppUpdater updater;
+    private File pendingInstallAfterPermission;
 
     @SuppressLint({"SetJavaScriptEnabled"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setTitle(ServerUrlValidator.APP_TITLE);
+        setTitle(getString(R.string.app_name));
+        updater = new AppUpdater(this);
 
         FrameLayout root = new FrameLayout(this);
         root.setLayoutParams(new ViewGroup.LayoutParams(
@@ -78,8 +83,11 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                boolean isLocal = url != null && url.startsWith("file:///android_asset/");
+                boolean isLocal = updater.isLocalWorkspaceUrl(url);
                 returnOfflineBtn.setVisibility(isLocal ? View.GONE : View.VISIBLE);
+                if (isLocal) {
+                    pushUpdateStateToWebView(updater.getStatusJson());
+                }
             }
 
             @Override
@@ -87,7 +95,7 @@ public class MainActivity extends Activity {
                 super.onReceivedError(view, request, error);
                 if (request != null && request.isForMainFrame()) {
                     String currentUrl = request.getUrl() != null ? request.getUrl().toString() : "";
-                    if (!currentUrl.startsWith("file:///android_asset/")) {
+                    if (!updater.isLocalWorkspaceUrl(currentUrl)) {
                         Toast.makeText(
                                 MainActivity.this,
                                 "Server unreachable. Returned to local offline workspace.",
@@ -165,7 +173,7 @@ public class MainActivity extends Activity {
         });
 
         returnOfflineBtn = new Button(this);
-        returnOfflineBtn.setText("Offline Mode");
+        returnOfflineBtn.setText("Return Local");
         returnOfflineBtn.setAllCaps(false);
         returnOfflineBtn.setTextSize(12f);
         returnOfflineBtn.setTextColor(0xFFFFFFFF);
@@ -197,19 +205,82 @@ public class MainActivity extends Activity {
         } else {
             loadLocalWorkspace();
         }
+
+        updater.checkInBackground(this::pushUpdateStateToWebView);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (pendingInstallAfterPermission != null
+                && (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || getPackageManager().canRequestPackageInstalls())) {
+            File ready = pendingInstallAfterPermission;
+            pendingInstallAfterPermission = null;
+            launchApkInstaller(ready);
+        }
     }
 
     private void loadLocalWorkspace() {
-        webView.loadUrl(ServerUrlValidator.LOCAL_ASSET_URL);
+        String launchUrl = updater.getLaunchAssetUrl();
+        try {
+            webView.loadUrl(launchUrl);
+        } catch (Exception ignored) {
+            webView.loadUrl(ServerUrlValidator.LOCAL_ASSET_URL);
+        }
+    }
+
+    private void pushUpdateStateToWebView(String statusJson) {
+        if (webView == null || statusJson == null) return;
+        runOnUiThread(() -> {
+            String currentUrl = webView.getUrl();
+            if (currentUrl == null || updater.isLocalWorkspaceUrl(currentUrl)) {
+                String jsArg = JSONObject.quote(statusJson);
+                webView.evaluateJavascript(
+                        "if(window.onNativeUpdateState){window.onNativeUpdateState(" + jsArg + ");}",
+                        null
+                );
+            }
+        });
+    }
+
+    private void launchApkInstaller(File apkFile) {
+        if (apkFile == null || !apkFile.isFile()) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !getPackageManager().canRequestPackageInstalls()) {
+            pendingInstallAfterPermission = apkFile;
+            Toast.makeText(
+                    this,
+                    "Enable 'Install unknown apps' to finish updating " + getString(R.string.app_name),
+                    Toast.LENGTH_LONG
+            ).show();
+            try {
+                Intent permIntent = new Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName())
+                );
+                startActivity(permIntent);
+            } catch (Exception ex) {
+                pendingInstallAfterPermission = null;
+            }
+            return;
+        }
+        try {
+            Uri contentUri = ApkFileProvider.uriForUpdateApk(this, apkFile);
+            Intent installIntent = new Intent(Intent.ACTION_VIEW);
+            installIntent.setDataAndType(contentUri, "application/vnd.android.package-archive");
+            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(installIntent);
+        } catch (Exception ex) {
+            Toast.makeText(this, "Installer failed to launch: " + ex.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private String getSavedServerUrl() {
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        return ServerUrlValidator.normalizeServerUrl(prefs.getString(KEY_SERVER_URL, ""));
+        SharedPreferences prefs = getSharedPreferences(AppUpdater.PREFS_NAME, MODE_PRIVATE);
+        return ServerUrlValidator.normalizeServerUrl(prefs.getString(AppUpdater.KEY_SERVER_URL, ""));
     }
 
     private void clearSavedServerUrl() {
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().remove(KEY_SERVER_URL).apply();
+        getSharedPreferences(AppUpdater.PREFS_NAME, MODE_PRIVATE).edit().remove(AppUpdater.KEY_SERVER_URL).apply();
     }
 
     @Override
@@ -236,6 +307,11 @@ public class MainActivity extends Activity {
 
     public class AndroidBridge {
         @JavascriptInterface
+        public String getAppName() {
+            return getString(R.string.app_name);
+        }
+
+        @JavascriptInterface
         public String getAppTitle() {
             return ServerUrlValidator.APP_TITLE;
         }
@@ -252,7 +328,7 @@ public class MainActivity extends Activity {
             if (normalized == null) {
                 return false;
             }
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_SERVER_URL, normalized).apply();
+            getSharedPreferences(AppUpdater.PREFS_NAME, MODE_PRIVATE).edit().putString(AppUpdater.KEY_SERVER_URL, normalized).apply();
             runOnUiThread(() -> webView.loadUrl(normalized));
             return true;
         }
@@ -261,6 +337,72 @@ public class MainActivity extends Activity {
         public void disconnectServer() {
             clearSavedServerUrl();
             runOnUiThread(MainActivity.this::loadLocalWorkspace);
+        }
+
+        @JavascriptInterface
+        public String getUpdateStatusJson() {
+            return updater.getStatusJson();
+        }
+
+        @JavascriptInterface
+        public void checkForUpdates() {
+            new Thread(() -> {
+                String json = updater.runUpdateCheck();
+                pushUpdateStateToWebView(json);
+            }, "FP-ManualCheck").start();
+        }
+
+        @JavascriptInterface
+        public void applyOtaNow() {
+            updater.markOtaApplied();
+            runOnUiThread(MainActivity.this::loadLocalWorkspace);
+        }
+
+        @JavascriptInterface
+        public void installApkUpdate() {
+            new Thread(() -> {
+                File apk = updater.downloadVerifiedApkUpdate();
+                pushUpdateStateToWebView(updater.getStatusJson());
+                if (apk != null) {
+                    runOnUiThread(() -> launchApkInstaller(apk));
+                }
+            }, "FP-ApkDownload").start();
+        }
+
+        @JavascriptInterface
+        public String getSyncStatusJson() {
+            return updater.getSyncStatusJson();
+        }
+
+        @JavascriptInterface
+        public boolean setSyncOverrideUrl(String rawUrl) {
+            boolean ok = updater.setSyncOverrideUrl(rawUrl);
+            if (ok) {
+                pushUpdateStateToWebView(updater.getStatusJson());
+            }
+            return ok;
+        }
+
+        @JavascriptInterface
+        public String nativeHttpJson(String method, String urlStr, String bodyJson, String bearerToken) {
+            return updater.nativeHttpJson(method, urlStr, bodyJson, bearerToken);
+        }
+
+        @JavascriptInterface
+        public void nativeHttpAsync(String reqId, String method, String urlStr, String bodyJson, String bearerToken) {
+            new Thread(() -> {
+                String resJson = updater.nativeHttpJson(method, urlStr, bodyJson, bearerToken);
+                runOnUiThread(() -> {
+                    if (webView != null) {
+                        String quotedId = JSONObject.quote(reqId == null ? "" : reqId);
+                        String quotedRes = JSONObject.quote(resJson == null ? "{}" : resJson);
+                        webView.evaluateJavascript(
+                                "if(window.__fpNativeHttpCb){window.__fpNativeHttpCb(" + quotedId + "," + quotedRes + ");}",
+                                null
+                        );
+                    }
+                });
+            }, "FP-HttpSync").start();
         }
 
         @JavascriptInterface

@@ -7,6 +7,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  APP_VERSION: "1.1.0"
+
 jobs:
   macos-build:
     name: Test & Build (macOS .app)
@@ -27,6 +30,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-desktop.txt pytest
 
+      - name: Stamp Build Metadata
+        run: |
+          BUILD_NUM=$((10 + ${{ github.run_number }}))
+          python -c "import json; json.dump({'version': '${{ env.APP_VERSION }}', 'build_number': $BUILD_NUM}, open('build_info.json', 'w'))"
+          cat build_info.json
+
       - name: Run Python Automated Test Suite
         run: |
           python -m pytest tests/ -v --tb=short
@@ -37,20 +46,25 @@ jobs:
 
       - name: Smoke Test Frozen macOS Executable
         run: |
+          BUILD_NUM=$((10 + ${{ github.run_number }}))
           mkdir -p /tmp/fp_macos_ci_data
           "./dist/FinancePulseAnalytics.app/Contents/MacOS/FinancePulseAnalytics" --headless --port 18421 --data-dir /tmp/fp_macos_ci_data &
           APP_PID=$!
-          python - <<'PY'
+          EXPECTED_BUILD="$BUILD_NUM" python - <<'PY'
           import json
+          import os
           import time
           import urllib.request
 
+          expected_build = int(os.environ["EXPECTED_BUILD"])
           ok = False
           for _ in range(80):
               try:
                   with urllib.request.urlopen("http://127.0.0.1:18421/health", timeout=2) as r:
                       d = json.loads(r.read().decode())
                       assert d["status"] == "ok" and "Finance Pulse Analytics" in d["title"]
+                      assert d.get("build") == expected_build
+                      assert d.get("sync_ready") is True
                       ok = True
                       break
               except Exception:
@@ -94,6 +108,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-desktop.txt pytest
 
+      - name: Stamp Build Metadata
+        shell: pwsh
+        run: |
+          $buildNum = 10 + [int]${{ github.run_number }}
+          python -c "import json; json.dump({'version': '${{ env.APP_VERSION }}', 'build_number': $buildNum}, open('build_info.json', 'w'))"
+          Get-Content build_info.json
+
       - name: Run Python Automated Test Suite
         run: |
           python -m pytest tests/ -v --tb=short
@@ -105,6 +126,7 @@ jobs:
       - name: Smoke Test Frozen Windows Executable
         shell: pwsh
         run: |
+          $expectedBuild = 10 + [int]${{ github.run_number }}
           New-Item -ItemType Directory -Force -Path "$env:TEMP\fp_win_ci_data" | Out-Null
           $proc = Start-Process -FilePath ".\dist\FinancePulseAnalytics\FinancePulseAnalytics.exe" -ArgumentList "--headless","--port","18422","--data-dir","$env:TEMP\fp_win_ci_data" -PassThru
           try {
@@ -113,7 +135,10 @@ jobs:
               if ($proc.HasExited) { throw "Windows executable exited unexpectedly with code $($proc.ExitCode)" }
               try {
                 $resp = Invoke-RestMethod -Uri "http://127.0.0.1:18422/health" -TimeoutSec 2
-                if ($resp.status -eq "ok") { $ok = $true; break }
+                if ($resp.status -eq "ok" -and [int]$resp.build -eq $expectedBuild -and $resp.sync_ready -eq $true) {
+                  $ok = $true
+                  break
+                }
               } catch {}
               Start-Sleep -Milliseconds 500
             }
@@ -154,6 +179,12 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      - name: Persist Android Debug Signing Key Across Releases
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
       - name: Prepare Preinstalled Android SDK & Accept Licenses
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
@@ -166,16 +197,41 @@ jobs:
       - name: Run Android Unit Tests & Build Debug APK
         working-directory: android
         run: |
+          BUILD_NUM=$((10 + ${{ github.run_number }}))
           chmod +x gradlew
-          ./gradlew testDebugUnitTest assembleDebug --no-daemon
+          ./gradlew testDebugUnitTest assembleDebug "-PversionCode=$BUILD_NUM" "-PversionName=${{ env.APP_VERSION }}" --no-daemon
 
-      - name: Stage APK & Checksum
+      - name: Stage APK, OTA Bundle & Checksums
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/debug/app-debug.apk dist/FinancePulseAnalytics-Android.apk
+          python3 - <<'PY'
+          import hashlib
+          import zipfile
+          from pathlib import Path
+
+          assets_dir = Path("android/app/src/main/assets")
+          ota_zip = Path("dist/FinancePulseAnalytics-OTA.zip")
+          allowed = [
+              "mobile_app.html",
+              "mobile_app.css",
+              "mobile_app.js",
+              "sample_data.js",
+              "chart.umd.min.js",
+              "favicon.svg",
+              "finance_pulse_sample.csv",
+          ]
+          with zipfile.ZipFile(ota_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+              for fname in allowed:
+                  src = assets_dir / fname
+                  assert src.is_file(), f"Missing OTA asset {src}"
+                  zf.write(src, arcname=fname)
+          PY
           cd dist
           sha256sum FinancePulseAnalytics-Android.apk > FinancePulseAnalytics-Android.sha256
+          sha256sum FinancePulseAnalytics-OTA.zip > FinancePulseAnalytics-OTA.sha256
           cat FinancePulseAnalytics-Android.sha256
+          cat FinancePulseAnalytics-OTA.sha256
 
       - name: Upload Android Artifact
         uses: actions/upload-artifact@v4
@@ -184,6 +240,8 @@ jobs:
           path: |
             dist/FinancePulseAnalytics-Android.apk
             dist/FinancePulseAnalytics-Android.sha256
+            dist/FinancePulseAnalytics-OTA.zip
+            dist/FinancePulseAnalytics-OTA.sha256
 
   publish-release:
     name: Publish GitHub Release
@@ -212,6 +270,68 @@ jobs:
           name: FinancePulseAnalytics-Android
           path: release-dist/
 
+      - name: Generate Release Update Manifest (version.json)
+        env:
+          SYNC_URL: ${{ vars.FINANCE_PULSE_SYNC_URL }}
+        run: |
+          BUILD_NUM=$((10 + ${{ github.run_number }}))
+          REPO="${{ github.repository }}"
+          APP_VER="${{ env.APP_VERSION }}"
+          python3 - "$BUILD_NUM" "$REPO" "$APP_VER" <<'PY'
+          import hashlib
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          build_num = int(sys.argv[1])
+          repo = sys.argv[2]
+          app_ver = sys.argv[3]
+          sync_url = (os.environ.get("SYNC_URL") or "").strip().rstrip("/")
+          dist = Path("release-dist")
+          dl_base = f"https://github.com/{repo}/releases/download/v1.0.0"
+
+          def sha256_of(fname: str) -> str:
+              p = dist / fname
+              assert p.is_file(), f"Missing release asset {p}"
+              return hashlib.sha256(p.read_bytes()).hexdigest().lower()
+
+          manifest = {
+              "version": app_ver,
+              "build_number": build_num,
+              "sync_server_url": sync_url,
+              "release_notes": f"Finance Pulse Analytics v{app_ver} (Build {build_num}) with universal auto-updater and wireless sync.",
+              "release_page_url": f"https://github.com/{repo}/releases/tag/v1.0.0",
+              "macos": {
+                  "version": app_ver,
+                  "build_number": build_num,
+                  "asset_name": "FinancePulseAnalytics-macOS-unsigned.zip",
+                  "url": f"{dl_base}/FinancePulseAnalytics-macOS-unsigned.zip",
+                  "sha256": sha256_of("FinancePulseAnalytics-macOS-unsigned.zip"),
+              },
+              "windows": {
+                  "version": app_ver,
+                  "build_number": build_num,
+                  "asset_name": "FinancePulseAnalytics-Windows-unsigned.zip",
+                  "url": f"{dl_base}/FinancePulseAnalytics-Windows-unsigned.zip",
+                  "sha256": sha256_of("FinancePulseAnalytics-Windows-unsigned.zip"),
+              },
+              "android": {
+                  "version_name": app_ver,
+                  "version_code": build_num,
+                  "apk_url": f"{dl_base}/FinancePulseAnalytics-Android.apk",
+                  "apk_sha256": sha256_of("FinancePulseAnalytics-Android.apk"),
+                  "ota": {
+                      "version": f"{app_ver}+{build_num}",
+                      "zip_url": f"{dl_base}/FinancePulseAnalytics-OTA.zip",
+                      "zip_sha256": sha256_of("FinancePulseAnalytics-OTA.zip"),
+                  },
+              },
+          }
+          (dist / "version.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+          print((dist / "version.json").read_text(encoding="utf-8"))
+          PY
+
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -222,7 +342,7 @@ jobs:
           files: |
             release-dist/*
           body: |
-            # Finance Pulse Analytics: Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform (v1.0.0)
+            # Finance Pulse Analytics: Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform (v${{ env.APP_VERSION }})
 
             ### 1-Click Downloads (No Setup Required)
             * **Windows Users:** Download [`FinancePulseAnalytics-Windows-unsigned.zip`](https://github.com/${{ github.repository }}/releases/download/v1.0.0/FinancePulseAnalytics-Windows-unsigned.zip), unzip, and double-click `FinancePulseAnalytics.exe`.

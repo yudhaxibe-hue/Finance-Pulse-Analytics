@@ -5,14 +5,19 @@ from pathlib import Path
 block_cipher = None
 ROOT_DIR = Path.cwd()
 ICON_PATH = ROOT_DIR / "packaging" / "assets" / "finance_pulse.ico"
+BUILD_INFO_PATH = ROOT_DIR / "build_info.json"
 
 datas = [
     (str(ROOT_DIR / "templates"), "templates"),
     (str(ROOT_DIR / "static"), "static"),
     (str(ROOT_DIR / "data" / "sample_data"), "data/sample_data"),
 ]
+if BUILD_INFO_PATH.is_file():
+    datas.append((str(BUILD_INFO_PATH), "."))
 
 hiddenimports = [
+    "updater",
+    "itsdangerous",
     "flask",
     "jinja2",
     "werkzeug",

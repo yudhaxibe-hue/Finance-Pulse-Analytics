@@ -1,18 +1,31 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller specification for macOS standalone bundle (FinancePulseAnalytics.app)."""
+import json
 from pathlib import Path
 
 block_cipher = None
 ROOT_DIR = Path.cwd()
 ICON_PATH = ROOT_DIR / "packaging" / "assets" / "finance_pulse.icns"
 
+BUILD_INFO_PATH = ROOT_DIR / "build_info.json"
+APP_VER = "1.1.0"
+if BUILD_INFO_PATH.is_file():
+    try:
+        APP_VER = str(json.loads(BUILD_INFO_PATH.read_text(encoding="utf-8")).get("version") or APP_VER)
+    except Exception:
+        pass
+
 datas = [
     (str(ROOT_DIR / "templates"), "templates"),
     (str(ROOT_DIR / "static"), "static"),
     (str(ROOT_DIR / "data" / "sample_data"), "data/sample_data"),
 ]
+if BUILD_INFO_PATH.is_file():
+    datas.append((str(BUILD_INFO_PATH), "."))
 
 hiddenimports = [
+    "updater",
+    "itsdangerous",
     "flask",
     "jinja2",
     "werkzeug",
@@ -106,9 +119,9 @@ app = BUNDLE(
     bundle_identifier="com.financepulse.analytics",
     info_plist={
         "CFBundleName": "Finance Pulse Analytics",
-        "CFBundleDisplayName": "Finance Pulse Analytics: Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform",
-        "CFBundleShortVersionString": "1.0.0",
-        "CFBundleVersion": "1.0.0",
+        "CFBundleDisplayName": "Finance Pulse Analytics",
+        "CFBundleShortVersionString": APP_VER,
+        "CFBundleVersion": APP_VER,
         "NSHighResolutionCapable": True,
         "LSMinimumSystemVersion": "11.0",
     },

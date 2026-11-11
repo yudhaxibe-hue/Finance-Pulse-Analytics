@@ -6,7 +6,7 @@ import config
 from database.db import connect
 
 CANONICAL = {
-    "date": ["date", "sales date", "transaction date", "txn date"],
+    "date": ["date", "sales date", "transaction date", "txn date", "txn_date"],
     "transaction_id": ["transaction id", "transaction_id", "id", "invoice id"],
     "transaction_type": ["transaction type", "type"],
     "category": ["category", "segment"],

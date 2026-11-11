@@ -10,10 +10,16 @@ android {
         applicationId = "com.financepulse.analytics"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        val propVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 2
+        val propVersionName = (project.findProperty("versionName") as String?) ?: "1.1.0"
+        versionCode = propVersionCode
+        versionName = propVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {

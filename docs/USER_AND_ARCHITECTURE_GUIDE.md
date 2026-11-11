@@ -54,7 +54,7 @@ When at least 4 distinct monthly periods exist:
 - **Workspace-Isolated User Portal (`/user/*`):** Each user account owns an isolated SQLite workspace (`workspaces` table) so uploaded CSV, XLSX, and JSON datasets and saved What-If scenarios remain strictly separated per user.
 - **Admin Governance Portal (`/admin/*`):** Separate login gate (`/admin/login`) automatically clears active user cookies. Supports account status toggling (`active` / `suspended`), global threshold management, and filterable **Audit Logs** (`/admin/audit`).
 - **Private Local Admin Desktop App (`dist_private/`):** Excluded from Git via [`.gitignore`](../.gitignore). Can manage a local SQLite file or point to a centrally hosted Flask server via `--remote-url` (`FINANCE_PULSE_REMOTE_URL`).
-- **Offline Android Engine (`android/`):** Embeds Chart.js (`chart.umd.min.js`), sample CSV data, and a deterministic JS replica of all 4 analytics engines (`mobile_app.js`) alongside a Settings **Server Link** to connect to a LAN or hosted Flask backend cleanly via `ServerUrlValidator.java`.
+- **Offline Android Engine (`android/`):** Embeds Chart.js (`chart.umd.min.js`), sample CSV data, a deterministic JS replica of all 4 analytics engines (`mobile_app.js`), a two-layer SHA-256 verified in-app updater (instant OTA asset swaps + native APK upgrades via `ApkFileProvider`), and offline-first automatic wireless sync.
 
 ---
 

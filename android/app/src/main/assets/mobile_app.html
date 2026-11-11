@@ -36,6 +36,17 @@
   <main class="main-wrap" id="mainWrap">
     <div class="toast-banner hidden" id="appNotice" role="status" aria-live="polite"></div>
 
+    <div class="update-toast hidden" id="updateActionBanner" role="status" aria-live="polite">
+      <div class="update-toast-text">
+        <strong id="updateBannerTitle">App update available</strong>
+        <span id="updateBannerSub">Ready to install directly inside this app</span>
+      </div>
+      <div class="update-toast-actions">
+        <button type="button" class="btn btn-compact" id="btnBannerUpdateNow">Update</button>
+        <button type="button" class="btn quiet btn-compact" id="btnBannerDismiss">Later</button>
+      </div>
+    </div>
+
     <!-- VIEW 1: LANDING / WELCOME GATE (matches Desktop landing.html) -->
     <section id="view-landing" class="view-section">
       <div class="landing-hero">
@@ -50,30 +61,9 @@
         </div>
 
         <div class="hero-links-row">
-          <button type="button" class="text-link-btn" id="btnLandingServer">Connect live server</button>
-          <span class="dot-sep" aria-hidden="true">·</span>
           <button type="button" class="text-link-btn" id="btnDownloadSample">Download sample CSV</button>
         </div>
       </div>
-
-      <section class="panel hidden" id="landingServerPanel">
-        <div class="panel-head">
-          <div>
-            <h2>Connect to laptop or hosted server</h2>
-            <p class="panel-sub">Open your full Python &amp; SQLite workspace over LAN or HTTPS</p>
-          </div>
-          <button type="button" class="btn quiet" id="btnCloseLandingServer">Close</button>
-        </div>
-        <div class="form-grid">
-          <label class="field">Server URL
-            <input type="url" id="landingServerUrlInput" placeholder="http://192.168.1.25:5000">
-          </label>
-          <div style="display:flex;align-items:flex-end;">
-            <button type="button" class="btn cta-full" id="btnLandingConnectServer">Connect now</button>
-          </div>
-        </div>
-        <div class="status-banner" id="landingServerStatus" style="margin-top:10px;">Enter the local or hosted Flask server address to sync live records.</div>
-      </section>
 
       <div class="section-label">Built around explainable calculations</div>
       <div class="cap-stack">
@@ -315,7 +305,7 @@
       <section id="tab-connect" class="tab-pane hidden">
         <div class="screen-header">
           <h1 class="screen-title">Account &amp; settings</h1>
-          <div class="ledger-status">Manage your workspace, thresholds, and live Flask server link</div>
+          <div class="ledger-status">Manage your workspace, analytical thresholds, and app updates</div>
         </div>
 
         <section class="panel">
@@ -359,30 +349,49 @@
         <section class="panel">
           <div class="panel-head">
             <div>
-              <h2>Live desktop / hosted server</h2>
-              <p class="panel-sub">Connect to a LAN workstation or deployed cloud Flask server</p>
+              <h2>App updates</h2>
+              <p class="panel-sub" id="appUpdateSub">Check and install new versions directly in-app</p>
             </div>
           </div>
-          <div class="form-grid">
-            <label class="field">Server URL
-              <input type="url" id="serverUrlInput" placeholder="http://192.168.1.25:5000">
-            </label>
-            <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
-              <button type="button" class="btn" id="btnConnectServer">Connect server</button>
-            </div>
-          </div>
-          <div class="status-banner" id="serverStatus" style="margin-top:12px;">
-            Running in 100% offline local mode on device.
+          <div class="status-banner" id="appUpdateStatus">Version 1.1.0 · Offline-Ready</div>
+          <div class="bar-actions-wrap" style="margin-top:12px;">
+            <button type="button" class="btn secondary" id="btnCheckUpdates">Check for updates</button>
+            <button type="button" class="btn hidden" id="btnPerformUpdate">Install update</button>
           </div>
         </section>
 
         <section class="panel">
           <p class="about-title">Finance Pulse Analytics</p>
           <p class="about-copy">Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform</p>
+          <button type="button" class="about-version-btn" id="aboutSecretTrigger">Engine v1.1.0 · Offline &amp; Auto-Sync Ready</button>
         </section>
       </section>
     </div>
   </main>
+
+  <!-- Hidden Owner Fallback Sheet (unlocked via 5 taps on version footer) -->
+  <div class="operator-modal hidden" id="hiddenOperatorModal" role="dialog" aria-modal="true" aria-labelledby="opModalTitle">
+    <div class="operator-sheet panel">
+      <div class="panel-head account-head">
+        <div style="min-width:0;">
+          <h2 id="opModalTitle">Operator Sync Console</h2>
+          <p class="panel-sub">Automatic wireless sync status and fallback server override</p>
+        </div>
+        <button type="button" class="btn quiet btn-compact" id="btnOpClose" style="flex-shrink:0;">Close</button>
+      </div>
+      <div class="status-banner" id="opSyncStatus">Auto-sync status initializing…</div>
+      <div class="form-grid" style="margin-top:12px;">
+        <label class="field">Sync Server URL (override)
+          <input type="url" id="opSyncUrlInput" placeholder="https://your-server.example.com">
+        </label>
+      </div>
+      <div class="bar-actions-wrap" style="margin-top:14px;">
+        <button type="button" class="btn" id="btnOpSaveSync">Save &amp; sync now</button>
+        <button type="button" class="btn secondary" id="btnOpResetSync">Reset to auto</button>
+        <button type="button" class="btn secondary" id="btnOpOpenFullView">Open full web portal</button>
+      </div>
+    </div>
+  </div>
 
   <nav class="bottom-nav hidden" id="bottomNav" aria-label="Primary Android navigation">
     <button type="button" class="nav-item is-active" data-tab="overview">

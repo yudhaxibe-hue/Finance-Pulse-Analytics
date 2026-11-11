@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>
     {% if mode == 'register' %}Create your account · {{ app_title }}
+    {% elif mode == 'admin_setup' %}Initialize administrator · {{ app_title }}
     {% elif mode == 'admin' %}Administrator sign in · {{ app_title }}
     {% else %}Sign in · {{ app_title }}{% endif %}
   </title>
@@ -27,11 +28,13 @@
     <section class="auth-card">
       <h1>
         {% if mode == 'register' %}Create your account
+        {% elif mode == 'admin_setup' %}Initialize administrator
         {% elif mode == 'admin' %}Administrator sign in
         {% else %}Sign in{% endif %}
       </h1>
       <p class="muted">
         {% if mode == 'register' %}Your account receives its own private financial workspace.
+        {% elif mode == 'admin_setup' %}Create the first owner administrator account for this device.
         {% elif mode == 'admin' %}Administrator Portal · Restricted to authorized operators.
         {% else %}Access your private Business Workspace.{% endif %}
       </p>
@@ -46,25 +49,25 @@
         {% endif %}
       {% endwith %}
 
-      <form method="post" class="stack" autocomplete="{{ 'off' if mode=='register' else 'on' }}">
-        {% if mode == 'register' %}
+      <form method="post" class="stack" autocomplete="{{ 'off' if mode in ('register', 'admin_setup') else 'on' }}">
+        {% if mode in ('register', 'admin_setup') %}
           <label>Name
             <input name="name" placeholder="Full name" autocomplete="name" required>
           </label>
         {% endif %}
         <label>Email
-          <input type="email" name="email" placeholder="name@company.com" autocomplete="{{ 'off' if mode=='register' else 'email' }}" required>
+          <input type="email" name="email" placeholder="name@company.com" autocomplete="{{ 'off' if mode in ('register', 'admin_setup') else 'email' }}" required>
         </label>
         <label>Password
           <span class="password-field">
-            <input id="auth-password" type="password" name="password" placeholder="At least 8 characters" autocomplete="{{ 'new-password' if mode=='register' else 'current-password' }}" required minlength="8">
+            <input id="auth-password" type="password" name="password" placeholder="At least 8 characters" autocomplete="{{ 'new-password' if mode in ('register', 'admin_setup') else 'current-password' }}" required minlength="8">
             <button type="button" class="password-toggle" data-toggle-password="auth-password" aria-label="Show password" aria-pressed="false">
               <span data-eye="open">{{ icon('eye', 16) }}</span>
               <span data-eye="off" style="display:none;">{{ icon('eye-off', 16) }}</span>
             </button>
           </span>
         </label>
-        <button class="auth-submit">{{ 'Create account' if mode=='register' else 'Sign in' }}</button>
+        <button class="auth-submit">{{ 'Create account' if mode=='register' else ('Initialize administrator' if mode=='admin_setup' else 'Sign in') }}</button>
       </form>
 
       <div class="auth-switch">
@@ -72,8 +75,13 @@
           New to {{ app_name }}? <a href="{{ url_for('register') }}">Create account</a> · <a href="{{ url_for('admin_login') }}">Admin login</a>
         {% elif mode == 'register' %}
           Already have an account? <a href="{{ url_for('user_login') }}">Sign in</a>
+        {% elif mode == 'admin_setup' %}
+          Already initialized? <a href="{{ url_for('admin_login') }}">Administrator sign in</a>
         {% else %}
           Looking for your business workspace? <a href="{{ url_for('user_login') }}">User sign in</a>
+          {% if needs_admin_setup %}
+            <div style="margin-top:8px;">First time opening Admin Portal on this device? <a href="{{ url_for('admin_setup') }}">Set up administrator account</a></div>
+          {% endif %}
         {% endif %}
       </div>
     </section>

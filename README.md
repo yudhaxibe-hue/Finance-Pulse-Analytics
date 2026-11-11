@@ -20,7 +20,7 @@ A local-first enterprise financial performance intelligence and profitability op
 | :--- | :--- | :--- |
 | **🪟 Windows 10 / 11** | [**📥 Download for Windows (.zip)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/download/v1.0.0/FinancePulseAnalytics-Windows-unsigned.zip) | **1.** Extract the downloaded `.zip` folder.<br>**2.** Double-click **`FinancePulseAnalytics.exe`**.<br>*Opens natively without terminal windows or Python setup.* |
 | **🍎 macOS (Apple Silicon & Intel)** | [**📥 Download for macOS (.zip)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/download/v1.0.0/FinancePulseAnalytics-macOS-unsigned.zip) | **1.** Extract the `.zip` archive.<br>**2.** Open **`FinancePulseAnalytics.app`**.<br>*(First launch of an unsigned build: right-click -> **Open**).* |
-| **🤖 Android (8.0+ / SDK 26–34)** | [**📥 Download Android APK (.apk)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/download/v1.0.0/FinancePulseAnalytics-Android.apk) | **1.** Open **`FinancePulseAnalytics-Android.apk`** on Android.<br>**2.** Runs 100% offline with bundled Chart.js & sample CSV (or link to a hosted server under **Settings**). |
+| **🤖 Android (8.0+ / SDK 26–34)** | [**📥 Download Android APK (.apk)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/download/v1.0.0/FinancePulseAnalytics-Android.apk) | **1.** Open **`FinancePulseAnalytics-Android.apk`** on Android.<br>**2.** Runs 100% offline with bundled Chart.js & sample CSV and supports automatic wireless updates. |
 | **📦 GitHub Releases Hub** | [**🔗 View All Releases & SHA-256 Checksums**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/latest) | Official release artifacts with SHA-256 checksums built automatically by GitHub Actions. |
 
 ---
@@ -64,8 +64,9 @@ Finance-Pulse-Analytics/
 ├── .github/workflows/ci.yml      # Automated macOS, Windows & Android CI/CD release pipeline
 ├── Run_FinancePulse_Mac.command  # 1-Click macOS Finder desktop launcher
 ├── Run_FinancePulse_Windows.bat  # 1-Click Windows Explorer desktop launcher
-├── app.py                        # Flask application, RBAC portals, exports & /health check
-├── app_launcher.py               # Loopback PyWebView shell, --admin, --create-admin & --remote-url
+├── app.py                        # Flask application, RBAC portals, exports, /health & wireless sync API
+├── app_launcher.py               # Loopback/LAN PyWebView shell, --admin, --public & background updates
+├── updater.py                    # In-app manifest updater, SHA-256 verification & background sync queue
 ├── config.py                     # OS writable DATA_DIR & PyInstaller bundle path resolver
 ├── analytics/                    # Core engines: metrics, profitability, anomalies, forecasting, solver, narratives
 ├── database/                     # SQLite schema & workspace-isolated queries + audit trail
@@ -113,7 +114,7 @@ python -m app_launcher --admin --remote-url https://your-finance-server.example.
 
 ### Automated Verification
 ```bash
-# Python unit + end-to-end Flask & launcher tests (15/15)
+# Python unit + end-to-end Flask, sync & updater tests
 python -m pytest tests/ -v
 
 # Android JUnit & debug APK build (JDK 17 + Android SDK 34)

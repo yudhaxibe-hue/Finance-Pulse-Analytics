@@ -10,6 +10,10 @@ __pycache__/
 .flask_secret
 *.db
 *.sqlite*
+sync_config.json
+sync_outbox.json
+sync_tokens.json
+build_info.json
 data/uploads/*
 !data/uploads/.gitkeep
 

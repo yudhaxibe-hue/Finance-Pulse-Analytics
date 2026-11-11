@@ -103,6 +103,9 @@
       <a href="{{ url_for('logout') }}">
         {{ icon('logout', 15) }}<span>Log out</span>
       </a>
+      <button type="button" class="side-version" id="sideVersionBtn" data-secret-sync-trigger title="{{ app_name }}">
+        v{{ app_version }} · {{ 'Build ' ~ app_build if app_build else 'Local' }}
+      </button>
     </div>
   </aside>
 
@@ -136,6 +139,18 @@
     </header>
 
     <div class="app-content">
+      <div class="update-banner" id="desktopUpdateBanner" hidden>
+        <div class="update-banner-copy">
+          <strong id="desktopUpdateTitle">Update available</strong>
+          <span id="desktopUpdateDetail" class="muted"></span>
+        </div>
+        <div class="update-banner-actions">
+          <button type="button" class="button compact" id="btnDesktopDownloadUpdate">Download update</button>
+          <button type="button" class="button secondary compact" id="btnDesktopOpenUpdate" hidden>Open package</button>
+          <button type="button" class="button quiet compact" id="btnDesktopDismissUpdate">Dismiss</button>
+        </div>
+      </div>
+
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           <div class="flash-stack">
@@ -149,5 +164,27 @@
       {% block content %}{% endblock %}
     </div>
   </main>
+
+  <dialog id="operatorSyncDialog" class="operator-dialog" aria-labelledby="operatorSyncTitle">
+    <div class="operator-dialog-head">
+      <div>
+        <h2 id="operatorSyncTitle">Operator Sync Console</h2>
+        <p class="muted">Automatic wireless sync status and fallback endpoint override</p>
+      </div>
+      <button type="button" class="button quiet compact" id="btnCloseOperatorSync">Close</button>
+    </div>
+    <div class="operator-dialog-body">
+      <div class="flash" id="operatorSyncStatusBox">Checking sync configuration…</div>
+      <label class="operator-field">
+        Central Admin Server URL (override)
+        <input type="url" id="operatorSyncUrlInput" placeholder="https://your-server.example.com">
+      </label>
+      <div class="operator-dialog-actions">
+        <button type="button" class="button" id="btnSaveOperatorSync">Save &amp; sync now</button>
+        <button type="button" class="button secondary" id="btnFlushOperatorSync">Retry pending sync</button>
+        <button type="button" class="button secondary" id="btnClearOperatorSync">Reset to auto</button>
+      </div>
+    </div>
+  </dialog>
 </body>
 </html>
