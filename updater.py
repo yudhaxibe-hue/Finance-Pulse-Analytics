@@ -538,6 +538,15 @@ def detect_desktop_install_target() -> dict[str, Any]:
     }
 
 
+def _clear_macos_quarantine(target: Path) -> None:
+    xattr_bin = Path("/usr/bin/xattr")
+    if xattr_bin.is_file():
+        try:
+            subprocess.run([str(xattr_bin), "-dr", "com.apple.quarantine", str(target)], check=False)
+        except OSError:
+            pass
+
+
 def _extract_update_zip(dl_path: Path, staging_dir: Path) -> None:
     shutil.rmtree(staging_dir, ignore_errors=True)
     staging_dir.mkdir(parents=True, exist_ok=True)
@@ -668,7 +677,7 @@ def install_desktop_update(trigger_shutdown: bool = True) -> dict[str, Any]:
             if sys.platform == "darwin":
                 staged_apps = sorted(staging_dir.rglob("*.app"))
                 if staged_apps:
-                    subprocess.run(["/usr/bin/xattr", "-dr", "com.apple.quarantine", str(staged_apps[0])], check=False)
+                    _clear_macos_quarantine(staged_apps[0])
             reveal_downloaded_update()
             with _STATE_LOCK:
                 _UPDATE_CACHE["install_status"] = "manual"
@@ -686,7 +695,7 @@ def install_desktop_update(trigger_shutdown: bool = True) -> dict[str, Any]:
             if not staged_apps:
                 raise RuntimeError("No .app bundle found inside downloaded macOS update archive.")
             staged_app = staged_apps[0]
-            subprocess.run(["/usr/bin/xattr", "-dr", "com.apple.quarantine", str(staged_app)], check=False)
+            _clear_macos_quarantine(staged_app)
             script_path = Path(config.DATA_DIR) / "apply_update.sh"
             script_path.parent.mkdir(parents=True, exist_ok=True)
             script_path.write_text(

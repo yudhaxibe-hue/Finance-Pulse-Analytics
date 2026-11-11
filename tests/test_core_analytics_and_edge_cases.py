@@ -480,7 +480,7 @@ class TestAdditionalCoverageAndEnterpriseGuards:
         real_popen = subprocess.Popen
 
         def selective_popen(cmd, **kw):
-            if cmd and cmd[0] == "/bin/sh":
+            if cmd and cmd[0] in ("/bin/sh", "cmd.exe"):
                 spawned.append(cmd)
                 return None
             return real_popen(cmd, **kw)
@@ -493,4 +493,25 @@ class TestAdditionalCoverageAndEnterpriseGuards:
         assert spawned and spawned[0][0] == "/bin/sh"
         assert (Path(config.DATA_DIR) / "apply_update.sh").is_file()
         assert (Path(config.DATA_DIR) / "update_staging" / "FinancePulseAnalytics.app").is_dir()
+
+        # Also verify Windows dir-swap install path works cleanly across platforms
+        spawned.clear()
+        monkeypatch.setattr(updater.sys, "platform", "win32")
+        win_dir = tmp_path / "win_install"
+        win_exe = win_dir / "FinancePulseAnalytics.exe"
+        win_exe.parent.mkdir(parents=True)
+        win_exe.write_text("old-exe", encoding="utf-8")
+        monkeypatch.setattr(updater.sys, "executable", str(win_exe))
+        win_zip = tmp_path / "FinancePulseAnalytics-Windows-unsigned.zip"
+        with zipfile.ZipFile(win_zip, "w") as zf:
+            zf.writestr("FinancePulseAnalytics/FinancePulseAnalytics.exe", "new-exe")
+        with updater._STATE_LOCK:
+            updater._UPDATE_CACHE["download_status"] = "ready"
+            updater._UPDATE_CACHE["download_path"] = str(win_zip)
+            updater._UPDATE_CACHE["sha256"] = hashlib.sha256(win_zip.read_bytes()).hexdigest()
+        win_res = updater.install_desktop_update(trigger_shutdown=False)
+        assert win_res["ok"] is True
+        assert win_res["restarting"] is True
+        assert spawned and spawned[0][0] == "cmd.exe"
+        assert (Path(config.DATA_DIR) / "apply_update.cmd").is_file()
 
