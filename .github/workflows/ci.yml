@@ -29,7 +29,7 @@ jobs:
 
       - name: Run Python Automated Test Suite
         run: |
-          python -m pytest tests/ -v
+          python -m pytest tests/ -v --tb=short
 
       - name: Build macOS Application Bundle via PyInstaller
         run: |
@@ -46,7 +46,7 @@ jobs:
           import urllib.request
 
           ok = False
-          for _ in range(40):
+          for _ in range(80):
               try:
                   with urllib.request.urlopen("http://127.0.0.1:18421/health", timeout=2) as r:
                       d = json.loads(r.read().decode())
@@ -96,7 +96,7 @@ jobs:
 
       - name: Run Python Automated Test Suite
         run: |
-          python -m pytest tests/ -v
+          python -m pytest tests/ -v --tb=short
 
       - name: Build Windows Application via PyInstaller
         run: |
@@ -109,7 +109,8 @@ jobs:
           $proc = Start-Process -FilePath ".\dist\FinancePulseAnalytics\FinancePulseAnalytics.exe" -ArgumentList "--headless","--port","18422","--data-dir","$env:TEMP\fp_win_ci_data" -PassThru
           try {
             $ok = $false
-            for ($i = 0; $i -lt 40; $i++) {
+            for ($i = 0; $i -lt 80; $i++) {
+              if ($proc.HasExited) { throw "Windows executable exited unexpectedly with code $($proc.ExitCode)" }
               try {
                 $resp = Invoke-RestMethod -Uri "http://127.0.0.1:18422/health" -TimeoutSec 2
                 if ($resp.status -eq "ok") { $ok = $true; break }

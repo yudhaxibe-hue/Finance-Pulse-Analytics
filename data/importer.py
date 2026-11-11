@@ -88,7 +88,7 @@ def normalize(frame, mapping, exclude_invalid=True):
     for field in ("revenue", "expense", "cost", "quantity", "unit_price", "investment"):
         out[field] = pd.to_numeric(out[field], errors="coerce").fillna(0.0)
     for field in ("transaction_id", "transaction_type", "category", "product", "department", "region", "notes"):
-        out[field] = out[field].map(_clean_text)
+        out[field] = pd.Series([_clean_text(v) for v in out[field]], index=out.index, dtype=object)
     valid = out.txn_date.notna() & (out.revenue >= 0) & (out.expense >= 0)
     excluded = int((~valid).sum())
     return (out[valid].copy() if exclude_invalid else out), excluded
