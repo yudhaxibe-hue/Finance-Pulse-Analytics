@@ -6,18 +6,25 @@
   <title>Finance Pulse Analytics: Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform</title>
   <link rel="stylesheet" href="mobile_app.css">
 </head>
-<body>
+<body class="mode-landing">
   <header class="app-bar">
-    <div class="brand-lockup">
+    <div class="brand-lockup" id="brandHomeBtn" role="button" tabindex="0" aria-label="Finance Pulse Analytics home">
       <svg class="brand-logo" viewBox="0 0 28 28" fill="none" aria-hidden="true">
         <rect x="0.5" y="0.5" width="27" height="27" rx="7.5" fill="#1D1D1F"/>
         <path d="M5.5 16.5H9.2L11.6 10.5L14.8 19.2L17.9 8.8L20.1 14.5H22.5" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         <circle cx="22.5" cy="14.5" r="1.4" fill="#3B9BFF"/>
       </svg>
-      <span class="brand-title">Finance Pulse</span>
-      <span class="currency-badge" id="currencyBadge">INR</span>
+      <span class="brand-title" id="headerBrandTitle">Finance Pulse Analytics</span>
+      <span class="currency-badge hidden" id="currencyBadge">INR</span>
     </div>
-    <div class="bar-actions">
+
+    <!-- Landing / Auth header actions -->
+    <div class="bar-actions" id="guestActions">
+      <button type="button" class="btn secondary" id="btnHeaderSignIn">Sign in</button>
+    </div>
+
+    <!-- Signed-in workspace header actions -->
+    <div class="bar-actions hidden" id="workspaceActions">
       <label class="btn" style="margin:0;">
         Import
         <input type="file" id="fileInput" accept=".csv,.json,text/csv,application/json" style="display:none;">
@@ -26,209 +33,358 @@
     </div>
   </header>
 
-  <main class="main-wrap">
-    <section id="tab-overview" class="tab-pane">
-      <div class="screen-header">
-        <h1 class="screen-title">Executive overview</h1>
-        <div class="ledger-status">
-          <span id="workspaceSummary">Loading workspace...</span>
-          <button type="button" class="btn quiet" id="btnLoadSample">Reset sample</button>
+  <main class="main-wrap" id="mainWrap">
+    <div class="toast-banner hidden" id="appNotice" role="status" aria-live="polite"></div>
+
+    <!-- VIEW 1: LANDING / WELCOME GATE (matches Desktop landing.html) -->
+    <section id="view-landing" class="view-section">
+      <div class="landing-hero">
+        <span class="hero-badge">Local-First Financial Intelligence</span>
+        <h1 class="hero-title">Financial clarity, computed locally.</h1>
+        <p class="hero-subtitle">Finance Pulse Analytics: Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform</p>
+        <p class="hero-lead">Upload CSV or JSON datasets on your device, evaluate profitability across segments, detect IQR outliers, project linear trends, and run target-margin &amp; what-if modeling inside your private workspace.</p>
+
+        <div class="hero-cta-stack">
+          <button type="button" class="btn cta-full" id="btnLandingRegister">Create account</button>
+          <button type="button" class="btn secondary cta-full" id="btnLandingLogin">Sign in to workspace</button>
+        </div>
+
+        <div class="hero-links-row">
+          <button type="button" class="text-link-btn" id="btnLandingServer">Connect live server</button>
+          <span class="dot-sep" aria-hidden="true">·</span>
+          <button type="button" class="text-link-btn" id="btnDownloadSample">Download sample CSV</button>
         </div>
       </div>
 
-      <div class="kpi-ledger" id="overviewKpis"></div>
-
-      <article class="intel-brief" id="overviewBrief"></article>
-
-      <section class="panel">
+      <section class="panel hidden" id="landingServerPanel">
         <div class="panel-head">
           <div>
-            <h2>Monthly performance trend</h2>
-            <p class="panel-sub" id="overviewChartSub">Revenue, expense, and net profit progression</p>
+            <h2>Connect to laptop or hosted server</h2>
+            <p class="panel-sub">Open your full Python &amp; SQLite workspace over LAN or HTTPS</p>
           </div>
-          <div class="mode-bar" id="overviewModeBar">
-            <button type="button" class="mode-btn is-active" data-mode="combo">Cashflow</button>
-            <button type="button" class="mode-btn" data-mode="cumulative">Cumulative</button>
-            <button type="button" class="mode-btn" data-mode="margin">Margin %</button>
-          </div>
-        </div>
-        <div class="chart-box"><canvas id="overviewCanvas"></canvas></div>
-      </section>
-    </section>
-
-    <section id="tab-segments" class="tab-pane hidden">
-      <div class="screen-header">
-        <h1 class="screen-title">Dimensional profitability</h1>
-        <div class="ledger-status">Rankings by product, department, category, and region</div>
-      </div>
-
-      <div class="mode-bar" id="dimensionPicker" aria-label="Choose segment dimension">
-        <button type="button" class="mode-btn is-active" data-dim="product">Products</button>
-        <button type="button" class="mode-btn" data-dim="department">Departments</button>
-        <button type="button" class="mode-btn" data-dim="category">Categories</button>
-        <button type="button" class="mode-btn" data-dim="region">Regions</button>
-      </div>
-
-      <article class="intel-brief" id="segmentBrief"></article>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 id="segmentChartTitle">Segment comparison</h2>
-            <p class="panel-sub" id="segmentChartSub">Switch visualization format</p>
-          </div>
-          <div class="mode-bar" id="segmentModeBar">
-            <button type="button" class="mode-btn is-active" data-mode="margin">Margin %</button>
-            <button type="button" class="mode-btn" data-mode="revprofit">Rev vs profit</button>
-            <button type="button" class="mode-btn" data-mode="share">Profit share</button>
-          </div>
-        </div>
-        <div class="chart-box"><canvas id="segmentCanvas"></canvas></div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head"><div><h2>Segment ledger</h2></div></div>
-        <div class="table-wrap"><table id="segmentTable"></table></div>
-      </section>
-    </section>
-
-    <section id="tab-anomalies" class="tab-pane hidden">
-      <div class="screen-header">
-        <h1 class="screen-title">Anomaly surveillance</h1>
-        <div class="ledger-status">Deterministic interquartile range (IQR) outlier audit</div>
-      </div>
-
-      <article class="intel-brief" id="anomalyBrief"></article>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>Outlier vs. cutoff</h2>
-            <p class="panel-sub">Flagged transactions above statistical bounds</p>
-          </div>
-          <div class="mode-bar" id="anomalyModeBar">
-            <button type="button" class="mode-btn is-active" data-mode="compare">Observed</button>
-            <button type="button" class="mode-btn" data-mode="excess">Excess delta</button>
-          </div>
-        </div>
-        <div class="chart-box"><canvas id="anomalyCanvas"></canvas></div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head"><div><h2>Flagged entries</h2></div></div>
-        <div class="table-wrap"><table id="anomalyTable"></table></div>
-      </section>
-    </section>
-
-    <section id="tab-forecast" class="tab-pane hidden">
-      <div class="screen-header">
-        <h1 class="screen-title">Forecast &amp; margin solver</h1>
-        <div class="ledger-status">Linear regression projection and profit target optimization</div>
-      </div>
-
-      <article class="intel-brief" id="forecastBrief"></article>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>Linear trend forecast</h2>
-            <p class="panel-sub" id="forecastMetricsText">Historical OLS projection with error backtesting</p>
-          </div>
-          <div style="min-width:130px;">
-            <label class="field">Horizon
-              <select id="forecastMonths">
-                <option value="3">3 months</option>
-                <option value="6" selected>6 months</option>
-                <option value="12">12 months</option>
-                <option value="18">18 months</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <div class="chart-box"><canvas id="forecastCanvas"></canvas></div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>Target-Margin Solver &amp; What-If</h2>
-            <p class="panel-sub">Compute break-even revenue and exact adjustment levers</p>
-          </div>
-        </div>
-        <div class="form-grid">
-          <label class="field">Target profit margin: <span id="targetMarginVal" class="num">25%</span>
-            <input type="range" id="targetMarginRange" min="5" max="60" value="25" step="1">
-          </label>
-          <div class="solver-summary" id="solverSummary"></div>
-          <label class="field">Revenue delta: <span id="simRevVal" class="num">+10%</span>
-            <input type="range" id="simRevRange" min="-40" max="60" value="10" step="1">
-          </label>
-          <label class="field">Expense delta: <span id="simExpVal" class="num">-5%</span>
-            <input type="range" id="simExpRange" min="-40" max="40" value="-5" step="1">
-          </label>
-        </div>
-        <div class="kpi-ledger" id="simKpis" style="margin-top:14px;"></div>
-      </section>
-    </section>
-
-    <section id="tab-connect" class="tab-pane hidden">
-      <div class="screen-header">
-        <h1 class="screen-title">Settings &amp; server link</h1>
-        <div class="ledger-status">Configure local thresholds or switch to a live Finance Pulse server</div>
-      </div>
-
-      <section class="panel">
-        <div class="panel-head"><div><h2>Analytical thresholds</h2></div></div>
-        <div class="form-grid">
-          <label class="field">Currency code
-            <select id="cfgCurrency">
-              <option value="INR">INR</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="GBP">GBP</option>
-            </select>
-          </label>
-          <label class="field">Margin floor (%)
-            <input type="number" id="cfgMargin" value="15" min="0" max="100" step="1">
-          </label>
-          <label class="field">Anomaly IQR multiplier
-            <input type="number" id="cfgIqr" value="1.5" min="0.5" max="10" step="0.1">
-          </label>
-          <div style="display:flex;align-items:flex-end;">
-            <button type="button" class="btn" id="btnApplySettings">Save settings</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>Live desktop / hosted server</h2>
-            <p class="panel-sub">Connect to a LAN workstation or deployed cloud Flask server</p>
-          </div>
+          <button type="button" class="btn quiet" id="btnCloseLandingServer">Close</button>
         </div>
         <div class="form-grid">
           <label class="field">Server URL
-            <input type="url" id="serverUrlInput" placeholder="http://192.168.1.25:5000">
+            <input type="url" id="landingServerUrlInput" placeholder="http://192.168.1.25:5000">
           </label>
-          <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
-            <button type="button" class="btn" id="btnConnectServer">Connect server</button>
-            <button type="button" class="btn secondary" id="btnResetData">Clear local cache</button>
+          <div style="display:flex;align-items:flex-end;">
+            <button type="button" class="btn cta-full" id="btnLandingConnectServer">Connect now</button>
           </div>
         </div>
-        <div class="status-banner" id="serverStatus" style="margin-top:12px;">
-          Running in 100% offline local mode on device.
+        <div class="status-banner" id="landingServerStatus" style="margin-top:10px;">Enter the local or hosted Flask server address to sync live records.</div>
+      </section>
+
+      <div class="section-label">Built around explainable calculations</div>
+      <div class="cap-stack">
+        <article class="panel cap-card">
+          <h3>Guided CSV &amp; JSON normalization</h3>
+          <p class="cap-copy">Detects common aliases such as Sales Date, Sales, Cost, and Dept while excluding invalid dates or negative revenue entries before analysis.</p>
+          <div class="cap-meta">Required fields: Date, Revenue, Expense · Optional: Product, Dept, Category, Region</div>
+        </article>
+
+        <article class="panel cap-card">
+          <h3>3-Pillar narratives &amp; 4D profitability</h3>
+          <p class="cap-copy">Leads every view with plain-English What it is, What happened, and What could have happened insights above switchable Chart.js visuals.</p>
+          <div class="cap-meta">Core metrics: Revenue, Net &amp; Gross Profit, Margin %, ROI %, IQR Anomaly Fence</div>
+        </article>
+
+        <article class="panel cap-card">
+          <h3>Forecasting &amp; Target-Margin Solver</h3>
+          <p class="cap-copy">Projects 3–18 month trajectories using OLS linear regression with historical MAE, RMSE, and MAPE accuracy plus what-if scenario sliders.</p>
+          <div class="cap-meta">100% On-Device Storage · Zero Cloud Exposure · Private Account Workspaces</div>
+        </article>
+      </div>
+    </section>
+
+    <!-- VIEW 2: ACCOUNT REGISTRATION / SIGN IN -->
+    <section id="view-auth" class="view-section hidden">
+      <button type="button" class="back-link-btn" id="btnAuthBack">← Back to overview</button>
+
+      <div class="auth-card panel">
+        <div class="mode-bar auth-tabs" role="tablist" aria-label="Account action">
+          <button type="button" class="mode-btn is-active" id="tabBtnRegister" data-auth-mode="register">Create account</button>
+          <button type="button" class="mode-btn" id="tabBtnLogin" data-auth-mode="login">Sign in</button>
+        </div>
+
+        <div class="auth-head">
+          <h1 class="screen-title" id="authHeading">Create your account</h1>
+          <p class="panel-sub" id="authSubheading">Set up a private local workspace on this device for your financial ledgers.</p>
+        </div>
+
+        <div class="auth-error hidden" id="authErrorBox" role="alert"></div>
+
+        <form id="authForm" class="auth-form" novalidate>
+          <label class="field" id="authNameWrap">Full name
+            <input type="text" id="authName" placeholder="e.g. Alice Analyst" autocomplete="name">
+          </label>
+          <label class="field">Email address
+            <input type="email" id="authEmail" placeholder="name@company.com" autocomplete="email" required>
+          </label>
+          <label class="field">Password
+            <input type="password" id="authPassword" placeholder="Minimum 6 characters" autocomplete="current-password" required>
+          </label>
+          <button type="submit" class="btn cta-full" id="authSubmitBtn">Create workspace account</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- VIEW 3: SIGNED-IN PRIVATE WORKSPACE -->
+    <div id="view-workspace" class="hidden">
+      <section id="tab-overview" class="tab-pane">
+        <div class="screen-header">
+          <h1 class="screen-title">Dashboard</h1>
+          <div class="ledger-status">
+            <span id="workspaceSummary">Empty workspace · 0 records</span>
+          </div>
+        </div>
+
+        <!-- Clean Empty State (matches Desktop dashboard.html) -->
+        <section class="panel empty-state-card" id="overviewEmpty">
+          <h2>Welcome to Finance Pulse Analytics</h2>
+          <p class="panel-sub">No financial data has been imported yet. Upload a CSV or JSON ledger to generate profitability KPIs, 3-pillar executive briefs, segment rankings, anomaly alerts, and linear forecasts.</p>
+          <div class="empty-actions">
+            <button type="button" class="btn cta-full" id="btnEmptyImport">Upload financial data</button>
+            <button type="button" class="btn secondary cta-full" id="btnEmptyLoadSample">Load 30-month sample dataset</button>
+          </div>
+          <div class="hero-links-row" style="margin-top:6px;">
+            <button type="button" class="text-link-btn" id="btnEmptyDownloadSample">Download sample CSV file</button>
+          </div>
+        </section>
+
+        <!-- Populated Dashboard Analytics -->
+        <div id="overviewPopulated" class="tab-pane hidden">
+          <div class="kpi-ledger" id="overviewKpis"></div>
+          <article class="intel-brief" id="overviewBrief"></article>
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Monthly financial performance</h2>
+                <p class="panel-sub" id="overviewChartSub">Revenue, expense, and net profit progression</p>
+              </div>
+              <div class="mode-bar" id="overviewModeBar">
+                <button type="button" class="mode-btn is-active" data-mode="combo">Cashflow</button>
+                <button type="button" class="mode-btn" data-mode="cumulative">Cumulative</button>
+                <button type="button" class="mode-btn" data-mode="margin">Margin %</button>
+              </div>
+            </div>
+            <div class="chart-box"><canvas id="overviewCanvas"></canvas></div>
+          </section>
         </div>
       </section>
 
-      <section class="panel">
-        <p class="about-title">Finance Pulse Analytics</p>
-        <p class="about-copy">Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform</p>
+      <section id="tab-segments" class="tab-pane hidden">
+        <div class="screen-header">
+          <h1 class="screen-title">Dimensional profitability</h1>
+          <div class="ledger-status">Rankings by product, department, category, and region</div>
+        </div>
+
+        <section class="panel empty-state-card" id="segmentsEmpty">
+          <h2>No transactions available to segment</h2>
+          <p class="panel-sub">Import a CSV or JSON file with financial records to compare profitability across Products, Departments, Categories, and Regions.</p>
+          <button type="button" class="btn" id="btnSegGoImport">Upload dataset</button>
+        </section>
+
+        <div id="segmentsPopulated" class="tab-pane hidden">
+          <div class="mode-bar" id="dimensionPicker" aria-label="Choose segment dimension">
+            <button type="button" class="mode-btn is-active" data-dim="product">Products</button>
+            <button type="button" class="mode-btn" data-dim="department">Departments</button>
+            <button type="button" class="mode-btn" data-dim="category">Categories</button>
+            <button type="button" class="mode-btn" data-dim="region">Regions</button>
+          </div>
+
+          <article class="intel-brief" id="segmentBrief"></article>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2 id="segmentChartTitle">Segment comparison</h2>
+                <p class="panel-sub" id="segmentChartSub">Switch visualization format</p>
+              </div>
+              <div class="mode-bar" id="segmentModeBar">
+                <button type="button" class="mode-btn is-active" data-mode="margin">Margin %</button>
+                <button type="button" class="mode-btn" data-mode="revprofit">Rev vs profit</button>
+                <button type="button" class="mode-btn" data-mode="share">Profit share</button>
+              </div>
+            </div>
+            <div class="chart-box"><canvas id="segmentCanvas"></canvas></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><div><h2>Segment ledger</h2></div></div>
+            <div class="table-wrap"><table id="segmentTable"></table></div>
+          </section>
+        </div>
       </section>
-    </section>
+
+      <section id="tab-anomalies" class="tab-pane hidden">
+        <div class="screen-header">
+          <h1 class="screen-title">Anomaly surveillance</h1>
+          <div class="ledger-status">Deterministic interquartile range (IQR) outlier audit</div>
+        </div>
+
+        <section class="panel empty-state-card" id="anomaliesEmpty">
+          <h2>No transactions available for outlier checks</h2>
+          <p class="panel-sub">Import your dataset to screen positive revenue and expense rows against configurable IQR limits.</p>
+          <button type="button" class="btn" id="btnAnomGoImport">Upload dataset</button>
+        </section>
+
+        <div id="anomaliesPopulated" class="tab-pane hidden">
+          <article class="intel-brief" id="anomalyBrief"></article>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Outlier vs. cutoff</h2>
+                <p class="panel-sub">Flagged transactions above statistical bounds</p>
+              </div>
+              <div class="mode-bar" id="anomalyModeBar">
+                <button type="button" class="mode-btn is-active" data-mode="compare">Observed</button>
+                <button type="button" class="mode-btn" data-mode="excess">Excess delta</button>
+              </div>
+            </div>
+            <div class="chart-box"><canvas id="anomalyCanvas"></canvas></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><div><h2>Flagged entries</h2></div></div>
+            <div class="table-wrap"><table id="anomalyTable"></table></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-forecast" class="tab-pane hidden">
+        <div class="screen-header">
+          <h1 class="screen-title">Forecast &amp; margin solver</h1>
+          <div class="ledger-status">Linear regression projection and profit target optimization</div>
+        </div>
+
+        <section class="panel empty-state-card" id="forecastEmpty">
+          <h2>No historical series available yet</h2>
+          <p class="panel-sub">Import multi-month transaction data to run OLS forecasts (MAE, RMSE, MAPE) and target-margin simulations.</p>
+          <button type="button" class="btn" id="btnFcGoImport">Upload dataset</button>
+        </section>
+
+        <div id="forecastPopulated" class="tab-pane hidden">
+          <article class="intel-brief" id="forecastBrief"></article>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Linear trend forecast</h2>
+                <p class="panel-sub" id="forecastMetricsText">Historical OLS projection with error backtesting</p>
+              </div>
+              <div style="min-width:130px;">
+                <label class="field">Horizon
+                  <select id="forecastMonths">
+                    <option value="3">3 months</option>
+                    <option value="6" selected>6 months</option>
+                    <option value="12">12 months</option>
+                    <option value="18">18 months</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="chart-box"><canvas id="forecastCanvas"></canvas></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Target-Margin Solver &amp; What-If</h2>
+                <p class="panel-sub">Compute break-even revenue and exact adjustment levers</p>
+              </div>
+            </div>
+            <div class="form-grid">
+              <label class="field">Target profit margin: <span id="targetMarginVal" class="num">25%</span>
+                <input type="range" id="targetMarginRange" min="5" max="60" value="25" step="1">
+              </label>
+              <div class="solver-summary" id="solverSummary"></div>
+              <label class="field">Revenue delta: <span id="simRevVal" class="num">+10%</span>
+                <input type="range" id="simRevRange" min="-40" max="60" value="10" step="1">
+              </label>
+              <label class="field">Expense delta: <span id="simExpVal" class="num">-5%</span>
+                <input type="range" id="simExpRange" min="-40" max="40" value="-5" step="1">
+              </label>
+            </div>
+            <div class="kpi-ledger" id="simKpis" style="margin-top:14px;"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-connect" class="tab-pane hidden">
+        <div class="screen-header">
+          <h1 class="screen-title">Account &amp; settings</h1>
+          <div class="ledger-status">Manage your workspace, thresholds, and live Flask server link</div>
+        </div>
+
+        <section class="panel">
+          <div class="panel-head account-head">
+            <div style="min-width:0;">
+              <h2 id="accountNameLabel">Signed in</h2>
+              <p class="panel-sub account-email-sub" id="accountEmailLabel">Local private workspace</p>
+            </div>
+            <button type="button" class="btn secondary btn-compact" id="btnLogout">Log out</button>
+          </div>
+          <div class="bar-actions-wrap account-actions-row">
+            <button type="button" class="btn" id="btnSettingsUpload">Upload CSV / JSON</button>
+            <button type="button" class="btn secondary" id="btnLoadSample">Load sample data</button>
+            <button type="button" class="btn secondary" id="btnResetData">Clear workspace data</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><div><h2>Analytical thresholds</h2></div></div>
+          <div class="form-grid">
+            <label class="field">Currency code
+              <select id="cfgCurrency">
+                <option value="INR">INR</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </label>
+            <label class="field">Margin floor (%)
+              <input type="number" id="cfgMargin" value="15" min="0" max="100" step="1">
+            </label>
+            <label class="field">Anomaly IQR multiplier
+              <input type="number" id="cfgIqr" value="1.5" min="0.5" max="10" step="0.1">
+            </label>
+            <div style="display:flex;align-items:flex-end;">
+              <button type="button" class="btn" id="btnApplySettings">Save settings</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Live desktop / hosted server</h2>
+              <p class="panel-sub">Connect to a LAN workstation or deployed cloud Flask server</p>
+            </div>
+          </div>
+          <div class="form-grid">
+            <label class="field">Server URL
+              <input type="url" id="serverUrlInput" placeholder="http://192.168.1.25:5000">
+            </label>
+            <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+              <button type="button" class="btn" id="btnConnectServer">Connect server</button>
+            </div>
+          </div>
+          <div class="status-banner" id="serverStatus" style="margin-top:12px;">
+            Running in 100% offline local mode on device.
+          </div>
+        </section>
+
+        <section class="panel">
+          <p class="about-title">Finance Pulse Analytics</p>
+          <p class="about-copy">Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform</p>
+        </section>
+      </section>
+    </div>
   </main>
 
-  <nav class="bottom-nav" aria-label="Primary Android navigation">
+  <nav class="bottom-nav hidden" id="bottomNav" aria-label="Primary Android navigation">
     <button type="button" class="nav-item is-active" data-tab="overview">
       <span class="nav-icon-pill">
         <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

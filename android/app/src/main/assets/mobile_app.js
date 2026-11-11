@@ -1,16 +1,19 @@
 (function () {
   "use strict";
 
-  const STORAGE_KEY_ROWS = "fp_mobile_rows_v1";
-  const STORAGE_KEY_META = "fp_mobile_meta_v1";
-  const STORAGE_KEY_CFG = "fp_mobile_cfg_v1";
-
+  const STORAGE_USERS = "fp_mobile_users_v2";
+  const STORAGE_SESSION = "fp_mobile_session_v2";
+  const STORAGE_CFG_PREFIX = "fp_mobile_cfg_";
+  const STORAGE_WS_PREFIX = "fp_mobile_ws_";
   const DEFAULT_CFG = { currency: "INR", marginThreshold: 15, anomalyIqr: 1.5 };
 
   let state = {
+    view: "landing", // "landing" | "auth" | "workspace"
+    authMode: "register",
+    user: null,
     rows: [],
-    meta: { source: "None", loadedAt: "" },
-    cfg: loadCfg(),
+    meta: { source: "Empty workspace", loadedAt: "" },
+    cfg: Object.assign({}, DEFAULT_CFG),
     activeTab: "overview",
     overviewMode: "combo",
     segmentDim: "product",
@@ -19,45 +22,114 @@
     charts: {},
   };
 
-  function loadCfg() {
+  let noticeTimer = null;
+
+  function showNotice(msg, isWarn) {
+    const el = document.getElementById("appNotice");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.toggle("warn", Boolean(isWarn));
+    el.classList.remove("hidden");
+    if (noticeTimer) clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => el.classList.add("hidden"), 4500);
+  }
+
+  function hashSecret(email, password) {
+    // Lightweight deterministic salted FNV-1a mix (compatible on file:///android_asset without crypto.subtle)
+    const input = "fp-local-salt::" + email.toLowerCase().trim() + "::" + password;
+    let h1 = 0x811c9dc5;
+    let h2 = 0x9e3779b9;
+    for (let i = 0; i < input.length; i++) {
+      const c = input.charCodeAt(i);
+      h1 ^= c;
+      h1 = Math.imul(h1, 0x01000193);
+      h2 ^= (c + i);
+      h2 = Math.imul(h2, 0x85ebca6b);
+    }
+    return ((h1 >>> 0).toString(16).padStart(8, "0")) + ((h2 >>> 0).toString(16).padStart(8, "0"));
+  }
+
+  function readUsers() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY_CFG);
-      return raw ? Object.assign({}, DEFAULT_CFG, JSON.parse(raw)) : Object.assign({}, DEFAULT_CFG);
+      const raw = localStorage.getItem(STORAGE_USERS);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch (_e) {
-      return Object.assign({}, DEFAULT_CFG);
+      return [];
     }
   }
 
-  function saveCfg() {
-    try { localStorage.setItem(STORAGE_KEY_CFG, JSON.stringify(state.cfg)); } catch (_e) {}
+  function writeUsers(users) {
+    try { localStorage.setItem(STORAGE_USERS, JSON.stringify(users)); } catch (_e) {}
+  }
+
+  function wsKey(email) {
+    return STORAGE_WS_PREFIX + encodeURIComponent(email.toLowerCase().trim());
+  }
+
+  function cfgKey(email) {
+    return STORAGE_CFG_PREFIX + encodeURIComponent(email.toLowerCase().trim());
+  }
+
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(STORAGE_SESSION);
+      if (!raw) return false;
+      const sess = JSON.parse(raw);
+      const users = readUsers();
+      const found = users.find((u) => u.email === sess.email);
+      if (!found) return false;
+      state.user = { name: found.name, email: found.email };
+      state.view = "workspace";
+      loadUserWorkspace();
+      return true;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function saveSession(user) {
+    try {
+      if (user) localStorage.setItem(STORAGE_SESSION, JSON.stringify({ email: user.email }));
+      else localStorage.removeItem(STORAGE_SESSION);
+    } catch (_e) {}
+  }
+
+  function loadUserWorkspace() {
+    if (!state.user) return;
+    try {
+      const rawCfg = localStorage.getItem(cfgKey(state.user.email));
+      state.cfg = rawCfg ? Object.assign({}, DEFAULT_CFG, JSON.parse(rawCfg)) : Object.assign({}, DEFAULT_CFG);
+    } catch (_e) {
+      state.cfg = Object.assign({}, DEFAULT_CFG);
+    }
+    try {
+      const rawWs = localStorage.getItem(wsKey(state.user.email));
+      if (rawWs) {
+        const parsed = JSON.parse(rawWs);
+        if (parsed && Array.isArray(parsed.rows)) {
+          state.rows = parsed.rows;
+          state.meta = parsed.meta || { source: "Saved workspace", loadedAt: "" };
+          return;
+        }
+      }
+    } catch (_e) {}
+    state.rows = [];
+    state.meta = { source: "Empty workspace", loadedAt: "" };
+  }
+
+  function saveUserCfg() {
+    if (!state.user) return;
+    try { localStorage.setItem(cfgKey(state.user.email), JSON.stringify(state.cfg)); } catch (_e) {}
   }
 
   function saveWorkspace(rows, sourceName) {
     state.rows = rows;
     state.meta = { source: sourceName, loadedAt: new Date().toLocaleTimeString() };
+    if (!state.user) return;
     try {
-      localStorage.setItem(STORAGE_KEY_ROWS, JSON.stringify(rows));
-      localStorage.setItem(STORAGE_KEY_META, JSON.stringify(state.meta));
+      localStorage.setItem(wsKey(state.user.email), JSON.stringify({ rows: state.rows, meta: state.meta }));
     } catch (_e) {}
-  }
-
-  function loadWorkspace() {
-    try {
-      const rawRows = localStorage.getItem(STORAGE_KEY_ROWS);
-      const rawMeta = localStorage.getItem(STORAGE_KEY_META);
-      if (rawRows) {
-        const parsed = JSON.parse(rawRows);
-        if (Array.isArray(parsed) && parsed.length) {
-          state.rows = parsed;
-          state.meta = rawMeta ? JSON.parse(rawMeta) : { source: "Saved workspace", loadedAt: "" };
-          return;
-        }
-      }
-    } catch (_e) {}
-    if (window.FINANCE_PULSE_SAMPLE_CSV) {
-      const rows = parseCsv(window.FINANCE_PULSE_SAMPLE_CSV);
-      saveWorkspace(rows, "finance_pulse_sample.csv (auto-loaded)");
-    }
   }
 
   function fmtNum(v, decimals) {
@@ -189,18 +261,18 @@
       investment += r.investment;
     }
     const profit = revenue - expenses;
-    const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
-    const expenseRatio = revenue > 0 ? (expenses / revenue) * 100 : 0;
-    const roi = investment > 0 ? ((profit - investment) / investment) * 100 : 0;
+    const margin = revenue > 0 ? (profit / revenue) * 100 : null;
+    const expenseRatio = revenue > 0 ? (expenses / revenue) * 100 : null;
+    const roi = investment > 0 ? (profit / investment) * 100 : null;
     return {
       revenue: round2(revenue),
       expenses: round2(expenses),
       cost: round2(cost),
       profit: round2(profit),
       gross_profit: round2(revenue - cost),
-      margin: round2(margin),
-      expense_ratio: round2(expenseRatio),
-      roi: round2(roi),
+      margin: margin === null ? null : round2(margin),
+      expense_ratio: expenseRatio === null ? null : round2(expenseRatio),
+      roi: roi === null ? null : round2(roi),
       transactions: rows.length,
     };
   }
@@ -261,19 +333,18 @@
   function detectAnomalies(rows, multiplier) {
     const flags = [];
     ["revenue", "expense"].forEach((col) => {
-      const vals = rows.map((r) => r[col]).slice().sort((a, b) => a - b);
+      const vals = rows.map((r) => r[col]).filter((v) => v > 0).sort((a, b) => a - b);
       if (vals.length < 4) return;
       const q1 = quantile(vals, 0.25);
       const q3 = quantile(vals, 0.75);
       const iqr = q3 - q1;
-      if (iqr <= 0) return;
       const cutoff = q3 + multiplier * iqr;
       rows.forEach((r) => {
         if (r[col] > cutoff) {
           flags.push({
             date: r.txn_date,
             metric: col.charAt(0).toUpperCase() + col.slice(1),
-            entity: r.product || r.category || "Entry",
+            entity: r.category || r.product || "Entry",
             value: round2(r[col]),
             threshold: round2(cutoff),
           });
@@ -284,7 +355,7 @@
   }
 
   function computeForecast(series, horizon) {
-    if (series.length < 3) return null;
+    if (series.length < 4) return null;
     const n = series.length;
     const y = series.map((s) => s.profit);
     let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
@@ -357,23 +428,22 @@
   }
 
   function renderOverview() {
+    const isEmpty = state.rows.length === 0;
+    document.getElementById("overviewEmpty").classList.toggle("hidden", !isEmpty);
+    document.getElementById("overviewPopulated").classList.toggle("hidden", isEmpty);
+    if (isEmpty) {
+      destroyChart("overview");
+      return;
+    }
+
     const m = computeMetrics(state.rows);
     const series = monthlySeries(state.rows);
     const kpiEl = document.getElementById("overviewKpis");
     kpiEl.innerHTML =
       kpiCard("Total revenue", fmtCurr(m.revenue), m.transactions + " rows") +
-      kpiCard("Operating expenses", fmtCurr(m.expenses), fmtNum(m.expense_ratio, 1) + "% of revenue") +
-      kpiCard("Net profit", fmtCurr(m.profit), fmtNum(m.margin, 1) + "% margin", m.profit >= 0 ? "pos" : "neg") +
-      kpiCard("Return on investment", fmtNum(m.roi, 1) + "%", "Gross " + fmtCurr(m.gross_profit));
-
-    if (!series.length) {
-      renderBrief("overviewBrief", "Overview intelligence", "No valid transactions loaded yet.",
-        "Tracks aggregate cashflow across your imported ledger.",
-        "Import a CSV/JSON file or load the sample dataset above.",
-        "Once imported, break-even and segment levers compute automatically.");
-      destroyChart("overview");
-      return;
-    }
+      kpiCard("Operating expenses", fmtCurr(m.expenses), (m.expense_ratio === null ? "N/A" : fmtNum(m.expense_ratio, 1) + "%") + " of revenue") +
+      kpiCard("Net profit", fmtCurr(m.profit), (m.margin === null ? "N/A" : fmtNum(m.margin, 1) + "%") + " margin", m.profit >= 0 ? "pos" : "neg") +
+      kpiCard("Return on investment", m.roi === null ? "N/A" : fmtNum(m.roi, 2) + "%", "Gross " + fmtCurr(m.gross_profit));
 
     const best = series.slice().sort((a, b) => b.profit - a.profit)[0];
     const worst = series.slice().sort((a, b) => a.profit - b.profit)[0];
@@ -385,7 +455,7 @@
     renderBrief(
       "overviewBrief",
       "Executive intelligence brief",
-      "Net margin closed at " + fmtNum(m.margin, 1) + "% across " + series.length + " months (" + fmtCurr(m.profit) + ").",
+      "Net margin closed at " + (m.margin === null ? "N/A" : fmtNum(m.margin, 1) + "%") + " across " + series.length + " months (" + fmtCurr(m.profit) + ").",
       "Evaluates monthly cashflow progression from " + first.period + " to " + last.period + " across " + fmtNum(m.transactions) + " ledger entries.",
       "Peak month reached " + best.period + " (" + fmtCurr(best.profit) + ", " + fmtNum(best.margin, 1) + "% margin) while softest performance occurred in " + worst.period + " (" + fmtCurr(worst.profit) + ").",
       gap > 0
@@ -431,6 +501,14 @@
   }
 
   function renderSegments() {
+    const isEmpty = state.rows.length === 0;
+    document.getElementById("segmentsEmpty").classList.toggle("hidden", !isEmpty);
+    document.getElementById("segmentsPopulated").classList.toggle("hidden", isEmpty);
+    if (isEmpty) {
+      destroyChart("segment");
+      return;
+    }
+
     const dim = state.segmentDim;
     const rows = byDimension(state.rows, dim);
     if (!rows.length) return;
@@ -501,6 +579,14 @@
   }
 
   function renderAnomalies() {
+    const isEmpty = state.rows.length === 0;
+    document.getElementById("anomaliesEmpty").classList.toggle("hidden", !isEmpty);
+    document.getElementById("anomaliesPopulated").classList.toggle("hidden", isEmpty);
+    if (isEmpty) {
+      destroyChart("anomaly");
+      return;
+    }
+
     const flags = detectAnomalies(state.rows, state.cfg.anomalyIqr);
     const m = computeMetrics(state.rows);
     const totalExcess = flags.reduce((a, f) => a + Math.max(0, f.value - f.threshold), 0);
@@ -510,7 +596,7 @@
         "Zero outliers detected at " + state.cfg.anomalyIqr + "x IQR.",
         "Monitors transaction-level revenue and expense spikes above Q3 + " + state.cfg.anomalyIqr + " × IQR.",
         "All " + state.rows.length + " transactions remained inside normal interquartile operating bounds.",
-        "Lowering the IQR multiplier under Server & Settings tightens sensitivity for minor variances.");
+        "Lowering the IQR multiplier under Settings tightens sensitivity for minor variances.");
       destroyChart("anomaly");
       document.getElementById("anomalyTable").innerHTML = "<tbody><tr><td>No outliers flagged above threshold.</td></tr></tbody>";
       return;
@@ -552,15 +638,23 @@
   }
 
   function renderForecastAndOptimizer() {
+    const isEmpty = state.rows.length === 0;
+    document.getElementById("forecastEmpty").classList.toggle("hidden", !isEmpty);
+    document.getElementById("forecastPopulated").classList.toggle("hidden", isEmpty);
+    if (isEmpty) {
+      destroyChart("forecast");
+      return;
+    }
+
     const series = monthlySeries(state.rows);
     const horizon = Number(document.getElementById("forecastMonths").value || 6);
     const fc = computeForecast(series, horizon);
     const m = computeMetrics(state.rows);
 
     if (!fc) {
-      renderBrief("forecastBrief", "Forecast & solver intelligence", "At least 3 monthly periods are required.",
-        "Linear OLS regression projects profit trajectories over 3–24 months.",
-        "Current dataset contains fewer than 3 distinct monthly periods.",
+      renderBrief("forecastBrief", "Forecast & solver intelligence", "At least 4 monthly periods are required.",
+        "Linear OLS regression projects profit trajectories over 3–18 months.",
+        "Current dataset contains fewer than 4 distinct monthly periods.",
         "Import multi-month history to unlock backtested projections.");
       destroyChart("forecast");
     } else {
@@ -594,7 +688,6 @@
       });
     }
 
-    // Target-margin solver + What-if simulation
     const targetPct = Number(document.getElementById("targetMarginRange").value || 25);
     document.getElementById("targetMarginVal").textContent = targetPct + "%";
     const neededRev = targetPct < 100 ? (m.expenses / (1 - targetPct / 100)) : m.revenue;
@@ -640,10 +733,64 @@
     };
   }
 
+  function syncChrome() {
+    const inWorkspace = state.view === "workspace";
+    document.body.classList.toggle("mode-workspace", inWorkspace);
+    document.body.classList.toggle("mode-landing", !inWorkspace);
+
+    document.getElementById("view-landing").classList.toggle("hidden", state.view !== "landing");
+    document.getElementById("view-auth").classList.toggle("hidden", state.view !== "auth");
+    document.getElementById("view-workspace").classList.toggle("hidden", !inWorkspace);
+
+    document.getElementById("guestActions").classList.toggle("hidden", state.view !== "landing");
+    document.getElementById("workspaceActions").classList.toggle("hidden", !inWorkspace);
+    document.getElementById("currencyBadge").classList.toggle("hidden", !inWorkspace);
+    document.getElementById("bottomNav").classList.toggle("hidden", !inWorkspace);
+    document.getElementById("headerBrandTitle").textContent = inWorkspace ? "Finance Pulse" : "Finance Pulse Analytics";
+  }
+
+  function openAuth(mode, pushHash) {
+    state.authMode = mode === "login" ? "login" : "register";
+    state.view = "auth";
+    const isReg = state.authMode === "register";
+    document.getElementById("tabBtnRegister").classList.toggle("is-active", isReg);
+    document.getElementById("tabBtnLogin").classList.toggle("is-active", !isReg);
+    document.getElementById("authNameWrap").classList.toggle("hidden", !isReg);
+    document.getElementById("authHeading").textContent = isReg ? "Create your account" : "Sign in to workspace";
+    document.getElementById("authSubheading").textContent = isReg
+      ? "Set up a private local workspace on this device for your financial ledgers."
+      : "Enter your account credentials to open your private on-device workspace.";
+    document.getElementById("authSubmitBtn").textContent = isReg ? "Create workspace account" : "Sign in";
+    document.getElementById("authErrorBox").classList.add("hidden");
+    if (pushHash !== false) {
+      try { window.location.hash = "#" + state.authMode; } catch (_e) {}
+    }
+    syncChrome();
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+
+  function openLanding(pushHash) {
+    state.view = "landing";
+    if (pushHash !== false) {
+      try { window.location.hash = "#landing"; } catch (_e) {}
+    }
+    syncChrome();
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+
   function renderAll() {
+    syncChrome();
+    if (state.view !== "workspace") return;
+
     document.getElementById("currencyBadge").textContent = state.cfg.currency;
-    document.getElementById("workspaceSummary").innerHTML =
-      "<strong>" + esc(state.meta.source) + "</strong> · " + state.rows.length + " local records";
+    document.getElementById("workspaceSummary").innerHTML = state.rows.length
+      ? "<strong>" + esc(state.meta.source) + "</strong> · " + state.rows.length + " records"
+      : esc(state.user ? state.user.name : "Workspace") + " · Empty workspace";
+
+    if (state.user) {
+      document.getElementById("accountNameLabel").textContent = state.user.name;
+      document.getElementById("accountEmailLabel").textContent = state.user.email + " · Private local workspace";
+    }
     document.getElementById("cfgCurrency").value = state.cfg.currency;
     document.getElementById("cfgMargin").value = state.cfg.marginThreshold;
     document.getElementById("cfgIqr").value = state.cfg.anomalyIqr;
@@ -660,12 +807,141 @@
   function switchTab(tabName) {
     state.activeTab = tabName;
     document.querySelectorAll(".bottom-nav .nav-item").forEach((b) => b.classList.toggle("is-active", b.dataset.tab === tabName));
-    document.querySelectorAll(".tab-pane").forEach((p) => p.classList.toggle("hidden", p.id !== "tab-" + tabName));
+    document.querySelectorAll("#view-workspace .tab-pane").forEach((p) => p.classList.toggle("hidden", p.id !== "tab-" + tabName));
     window.scrollTo({ top: 0, behavior: "instant" });
     renderAll();
   }
 
+  function downloadCsvFile(filename, csv) {
+    if (window.AndroidBridge && window.AndroidBridge.saveCsvExport) {
+      window.AndroidBridge.saveCsvExport(filename, csv);
+      showNotice("Saved " + filename + " to app Downloads folder.");
+    } else {
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      showNotice("Prepared " + filename + " for download.");
+    }
+  }
+
+  function triggerFileImport() {
+    document.getElementById("fileInput").click();
+  }
+
+  function loadSampleIntoWorkspace() {
+    if (window.FINANCE_PULSE_SAMPLE_CSV) {
+      saveWorkspace(parseCsv(window.FINANCE_PULSE_SAMPLE_CSV), "finance_pulse_sample.csv");
+      switchTab("overview");
+      showNotice("Loaded 30-month sample dataset (120 transactions).");
+    }
+  }
+
   function bindEvents() {
+    document.getElementById("brandHomeBtn").addEventListener("click", () => {
+      if (state.view === "workspace") switchTab("overview");
+      else openLanding();
+    });
+    document.getElementById("btnHeaderSignIn").addEventListener("click", () => openAuth("login"));
+    document.getElementById("btnLandingRegister").addEventListener("click", () => openAuth("register"));
+    document.getElementById("btnLandingLogin").addEventListener("click", () => openAuth("login"));
+    document.getElementById("btnAuthBack").addEventListener("click", () => openLanding());
+    document.getElementById("tabBtnRegister").addEventListener("click", () => openAuth("register"));
+    document.getElementById("tabBtnLogin").addEventListener("click", () => openAuth("login"));
+
+    document.getElementById("btnLandingServer").addEventListener("click", () => {
+      document.getElementById("landingServerPanel").classList.toggle("hidden");
+    });
+    document.getElementById("btnCloseLandingServer").addEventListener("click", () => {
+      document.getElementById("landingServerPanel").classList.add("hidden");
+    });
+    document.getElementById("btnLandingConnectServer").addEventListener("click", () => {
+      const url = document.getElementById("landingServerUrlInput").value.trim();
+      const status = document.getElementById("landingServerStatus");
+      if (window.AndroidBridge && window.AndroidBridge.connectServer) {
+        const ok = window.AndroidBridge.connectServer(url);
+        if (!ok) status.textContent = "Enter a valid http:// or https:// URL.";
+      } else if (url) {
+        status.textContent = "Server bridge activates inside the installed Android APK (" + url + ").";
+      } else {
+        status.textContent = "Enter a valid http:// or https:// server address.";
+      }
+    });
+
+    const handleSampleDownload = () => {
+      if (window.FINANCE_PULSE_SAMPLE_CSV) {
+        downloadCsvFile("finance_pulse_sample.csv", window.FINANCE_PULSE_SAMPLE_CSV);
+      }
+    };
+    document.getElementById("btnDownloadSample").addEventListener("click", handleSampleDownload);
+    document.getElementById("btnEmptyDownloadSample").addEventListener("click", handleSampleDownload);
+
+    document.getElementById("authForm").addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      const errEl = document.getElementById("authErrorBox");
+      const name = document.getElementById("authName").value.trim();
+      const email = document.getElementById("authEmail").value.trim().toLowerCase();
+      const password = document.getElementById("authPassword").value;
+
+      const fail = (msg) => {
+        errEl.textContent = msg;
+        errEl.classList.remove("hidden");
+      };
+
+      if (!email || !email.includes("@")) return fail("Please enter a valid email address.");
+      if (!password || password.length < 6) return fail("Password must be at least 6 characters.");
+
+      const users = readUsers();
+      if (state.authMode === "register") {
+        if (!name) return fail("Please enter your full name.");
+        if (users.some((u) => u.email === email)) {
+          return fail("An account with this email already exists. Switch to Sign in.");
+        }
+        const record = {
+          name,
+          email,
+          hash: hashSecret(email, password),
+          createdAt: new Date().toISOString(),
+        };
+        users.push(record);
+        writeUsers(users);
+        state.user = { name: record.name, email: record.email };
+        saveSession(state.user);
+        loadUserWorkspace();
+        state.view = "workspace";
+        state.activeTab = "overview";
+        try { history.replaceState(null, "", "#workspace"); } catch (_e) {}
+        document.getElementById("authForm").reset();
+        errEl.classList.add("hidden");
+        renderAll();
+      } else {
+        const existing = users.find((u) => u.email === email);
+        if (!existing || existing.hash !== hashSecret(email, password)) {
+          return fail("Invalid email or password.");
+        }
+        state.user = { name: existing.name, email: existing.email };
+        saveSession(state.user);
+        loadUserWorkspace();
+        state.view = "workspace";
+        state.activeTab = "overview";
+        try { history.replaceState(null, "", "#workspace"); } catch (_e) {}
+        document.getElementById("authForm").reset();
+        errEl.classList.add("hidden");
+        renderAll();
+      }
+    });
+
+    document.getElementById("btnLogout").addEventListener("click", () => {
+      saveSession(null);
+      state.user = null;
+      state.rows = [];
+      state.activeTab = "overview";
+      openLanding();
+    });
+
     document.querySelectorAll(".bottom-nav .nav-item").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
 
     document.querySelectorAll("#overviewModeBar .mode-btn").forEach((b) => b.addEventListener("click", () => {
@@ -697,12 +973,14 @@
     document.getElementById("simRevRange").addEventListener("input", renderForecastAndOptimizer);
     document.getElementById("simExpRange").addEventListener("input", renderForecastAndOptimizer);
 
-    document.getElementById("btnLoadSample").addEventListener("click", () => {
-      if (window.FINANCE_PULSE_SAMPLE_CSV) {
-        saveWorkspace(parseCsv(window.FINANCE_PULSE_SAMPLE_CSV), "finance_pulse_sample.csv");
-        renderAll();
-      }
-    });
+    document.getElementById("btnEmptyImport").addEventListener("click", triggerFileImport);
+    document.getElementById("btnSegGoImport").addEventListener("click", () => { switchTab("overview"); triggerFileImport(); });
+    document.getElementById("btnAnomGoImport").addEventListener("click", () => { switchTab("overview"); triggerFileImport(); });
+    document.getElementById("btnFcGoImport").addEventListener("click", () => { switchTab("overview"); triggerFileImport(); });
+    document.getElementById("btnSettingsUpload").addEventListener("click", triggerFileImport);
+
+    document.getElementById("btnEmptyLoadSample").addEventListener("click", loadSampleIntoWorkspace);
+    document.getElementById("btnLoadSample").addEventListener("click", loadSampleIntoWorkspace);
 
     document.getElementById("fileInput").addEventListener("change", (ev) => {
       const file = ev.target.files && ev.target.files[0];
@@ -720,40 +998,35 @@
         } else {
           parsed = parseCsv(text);
         }
+        ev.target.value = "";
         if (parsed.length) {
           saveWorkspace(parsed, file.name);
-          renderAll();
+          switchTab("overview");
+          showNotice("Imported " + parsed.length + " records from " + file.name + ".");
         } else {
-          alert("Could not detect valid Date, Revenue, and Expense columns in " + file.name);
+          showNotice("Could not detect valid Date, Revenue, and Expense columns in " + file.name + ".", true);
         }
       };
       reader.readAsText(file);
     });
 
     document.getElementById("btnExportCsv").addEventListener("click", () => {
-      if (!state.rows.length) return;
+      if (!state.rows.length) {
+        showNotice("Import financial data before exporting CSV.", true);
+        return;
+      }
       const header = "txn_date,product,department,category,region,revenue,expense,cost,investment\n";
       const body = state.rows.map((r) => [r.txn_date, r.product, r.department, r.category, r.region, r.revenue, r.expense, r.cost, r.investment].join(",")).join("\n");
-      const csv = header + body + "\n";
-      if (window.AndroidBridge && window.AndroidBridge.saveCsvExport) {
-        window.AndroidBridge.saveCsvExport("finance_pulse_mobile_export.csv", csv);
-      } else {
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "finance_pulse_mobile_export.csv";
-        a.click();
-        URL.revokeObjectURL(url);
-      }
+      downloadCsvFile("finance_pulse_mobile_export.csv", header + body + "\n");
     });
 
     document.getElementById("btnApplySettings").addEventListener("click", () => {
       state.cfg.currency = document.getElementById("cfgCurrency").value;
       state.cfg.marginThreshold = Math.max(0, Math.min(100, Number(document.getElementById("cfgMargin").value) || 15));
       state.cfg.anomalyIqr = Math.max(0.5, Math.min(10, Number(document.getElementById("cfgIqr").value) || 1.5));
-      saveCfg();
+      saveUserCfg();
       renderAll();
+      showNotice("Updated local analytical thresholds.");
     });
 
     document.getElementById("btnConnectServer").addEventListener("click", () => {
@@ -764,18 +1037,29 @@
         if (!ok) status.textContent = "Enter a valid http:// or https:// URL.";
       } else if (url) {
         status.textContent = "Server bridge available when installed as Android APK (" + url + ").";
+      } else {
+        status.textContent = "Enter a valid http:// or https:// URL.";
       }
     });
 
     document.getElementById("btnResetData").addEventListener("click", () => {
-      try { localStorage.removeItem(STORAGE_KEY_ROWS); localStorage.removeItem(STORAGE_KEY_META); } catch (_e) {}
-      state.rows = [];
-      state.meta = { source: "Cleared", loadedAt: "" };
-      renderAll();
+      saveWorkspace([], "Empty workspace");
+      switchTab("overview");
+      showNotice("Cleared workspace records.");
+    });
+
+    window.addEventListener("hashchange", () => {
+      if (state.view === "workspace") return;
+      const h = (window.location.hash || "").replace(/^#/, "");
+      if (h === "login" || h === "register") openAuth(h, false);
+      else openLanding(false);
     });
   }
 
-  loadWorkspace();
   bindEvents();
-  renderAll();
+  if (!loadSession()) {
+    openLanding(false);
+  } else {
+    renderAll();
+  }
 })();
