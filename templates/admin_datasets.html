@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block page_title %}Datasets &amp; imports{% endblock %}
+{% block title %}Datasets &amp; imports{% endblock %}
+{% block content %}
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Imported datasets</h2>
+        <p>Complete inventory of uploaded CSV, Excel, and JSON datasets across workspaces.</p>
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Dataset</th>
+            <th>Owner</th>
+            <th>Type</th>
+            <th class="num">Records</th>
+            <th class="num">Excluded</th>
+            <th>Status</th>
+            <th>Imported</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in datasets %}
+            <tr>
+              <td>{{ item.filename }}</td>
+              <td><strong>{{ item.owner_name or 'Legacy/demo' }}</strong>{% if item.email %}<br><span class="muted">{{ item.email }}</span>{% endif %}</td>
+              <td><span class="badge">{{ item.file_type or 'Unknown' }}</span></td>
+              <td class="num">{{ item.row_count }}</td>
+              <td class="num">{{ item.excluded_count }}</td>
+              <td><span class="badge positive">{{ item.status }}</span></td>
+              <td class="tabular">{{ item.imported_at[:19].replace('T', ' ') }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7" class="muted">No datasets found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

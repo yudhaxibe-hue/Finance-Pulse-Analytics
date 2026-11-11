@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% block page_title %}Review import{% endblock %}
+{% block title %}Review import{% endblock %}
+{% block content %}
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Detected column mapping</h2>
+        <p>Verify the suggested field mapping before committing this dataset to your workspace.</p>
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Finance field</th>
+            <th>Source column</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for field, column in mapping.items() %}
+            <tr>
+              <td>{{ field.replace('_', ' ').title() }}</td>
+              <td><span class="badge accent">{{ column }}</span></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="two">
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Data quality</h2>
+          <p>Validation summary checked prior to normalization.</p>
+        </div>
+      </div>
+      <dl>
+        {% for key, value in report.items() %}
+          <dt>{{ key.replace('_', ' ').title() }}</dt>
+          <dd>{{ value if value else 'None' }}</dd>
+        {% endfor %}
+      </dl>
+    </article>
+
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Preview</h2>
+          <p>First rows detected in your uploaded file.</p>
+        </div>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>{% for column in columns %}<th>{{ column }}</th>{% endfor %}</tr>
+          </thead>
+          <tbody>
+            {% for row in preview %}
+              <tr>{% for column in columns %}<td>{{ row[column] }}</td>{% endfor %}</tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+
+  <form method="post" class="header-actions">
+    <input type="hidden" name="confirm" value="1">
+    <button class="pill">Confirm and import</button>
+    <a class="button secondary pill" href="{{ url_for('user_data') }}">Cancel</a>
+  </form>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block page_title %}Settings{% endblock %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+  <section class="panel settings">
+    <div class="panel-head">
+      <div>
+        <h2>Financial and data preferences</h2>
+        <p>System-wide currency formatting, analytical thresholds, and default forecast horizons.</p>
+      </div>
+    </div>
+    <form method="post" class="formgrid">
+      <label>Currency
+        <select name="currency">
+          {% for c in ['INR', 'USD', 'EUR', 'GBP'] %}
+            <option {{ 'selected' if settings.currency==c }}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Profit-margin warning threshold (%)
+        <input name="margin_threshold" type="number" step="0.1" min="0" max="100" value="{{ settings.margin_threshold }}">
+      </label>
+      <label>Anomaly IQR multiplier
+        <input name="anomaly_threshold" type="number" step="0.1" min="0.5" max="10" value="{{ settings.anomaly_threshold }}">
+      </label>
+      <label>Default forecast period (months)
+        <input name="forecast_period" type="number" min="3" max="24" value="{{ settings.forecast_period }}">
+      </label>
+      <label>Date format
+        <input name="date_format" value="{{ settings.date_format }}" required>
+      </label>
+      <div class="form-actions">
+        <button>Save settings</button>
+      </div>
+    </form>
+
+    <hr>
+
+    <div class="panel-head" style="margin-bottom: 10px;">
+      <div>
+        <h2>About</h2>
+      </div>
+    </div>
+    <p class="panel-copy"><strong>{{ app_title }}</strong> (v{{ app_version }}) · Runs locally with Flask, SQLite, Pandas, NumPy, ReportLab, and Chart.js.</p>
+  </section>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block page_title %}Admin dashboard{% endblock %}
+{% block title %}Admin dashboard{% endblock %}
+{% block content %}
+  <section class="kpi-strip admin-kpis" aria-label="System overview metrics">
+    <div class="kpi-cell">
+      <span class="kpi-label">User accounts</span>
+      <strong class="kpi-value">{{ stats.users }}</strong>
+    </div>
+    <div class="kpi-cell">
+      <span class="kpi-label">Datasets</span>
+      <strong class="kpi-value">{{ stats.datasets }}</strong>
+    </div>
+    <div class="kpi-cell">
+      <span class="kpi-label">Imported records</span>
+      <strong class="kpi-value">{{ stats.records }}</strong>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Recent imports</h2>
+        <p>Latest dataset uploads recorded across active user workspaces.</p>
+      </div>
+    </div>
+    {% if imports %}
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Dataset</th>
+              <th>Workspace</th>
+              <th class="num">Records</th>
+              <th>Imported</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in imports %}
+              <tr>
+                <td>{{ item.filename }}</td>
+                <td>{{ item.workspace_name or 'Unassigned' }}</td>
+                <td class="num">{{ item.row_count }}</td>
+                <td class="tabular">{{ item.imported_at[:19].replace('T', ' ') }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No datasets have been imported.</p>
+    {% endif %}
+  </section>
+{% endblock %}

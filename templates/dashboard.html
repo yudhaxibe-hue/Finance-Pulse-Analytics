@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import icon %}
+{% from '_intel_brief.html' import render_intel_brief %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+  {% if not has_data %}
+    <section class="empty dashboard-empty">
+      <div class="empty-glyph">{{ icon('overview', 22) }}</div>
+      <h2>Welcome to {{ app_name }}</h2>
+      <p>No financial data has been imported yet. Upload a CSV, Excel, or JSON file to start your enterprise performance and profitability analysis.</p>
+      <div class="empty-actions">
+        <a class="button pill" href="{{ url_for('user_data') }}">Upload financial data</a>
+        <a class="button secondary pill" href="{{ url_for('sample') }}" download="finance_pulse_sample.csv">Download sample dataset</a>
+      </div>
+    </section>
+  {% else %}
+    <div class="toolbar-card">
+      <form class="filter" method="get">
+        <label>From
+          <input type="date" name="start" value="{{ request.args.get('start', '') }}">
+        </label>
+        <label>To
+          <input type="date" name="end" value="{{ request.args.get('end', '') }}">
+        </label>
+        <button class="secondary">Apply range</button>
+        {% if request.args.get('start') or request.args.get('end') %}
+          <a class="button quiet" href="{{ url_for('user_dashboard') }}">Reset</a>
+        {% endif %}
+      </form>
+      <span class="muted num">{{ metrics.transactions }} transaction{{ '' if metrics.transactions == 1 else 's' }} in view</span>
+    </div>
+
+    {% if metrics.revenue is none %}
+      <section class="empty">
+        <div class="empty-glyph">{{ icon('overview', 22) }}</div>
+        <h2>No matching transactions</h2>
+        <p>No transactions were found in the selected date range.</p>
+        <a class="button secondary pill" href="{{ url_for('user_dashboard') }}">Clear date filter</a>
+      </section>
+    {% else %}
+      <section class="kpi-strip" aria-label="Financial summary metrics">
+        {% for label, key, suffix in [('Total revenue', 'revenue', ''), ('Total expenses', 'expenses', ''), ('Net profit', 'profit', ''), ('Profit margin', 'margin', '%'), ('ROI', 'roi', '%')] %}
+          {% set val = metrics[key] %}
+          {% set tone = '' %}
+          {% if key in ('profit', 'margin') and val is not none %}
+            {% set tone = 'positive' if val >= 0 else 'negative' %}
+          {% endif %}
+          <div class="kpi-cell">
+            <span class="kpi-label">{{ label }}</span>
+            <strong class="kpi-value {{ tone }}">
+              {% if val is none %}N/A{% else %}{{ '{:,.2f}'.format(val) }}{{ suffix }}{% endif %}
+            </strong>
+          </div>
+        {% endfor %}
+      </section>
+
+      {{ render_intel_brief(brief, 'Executive intelligence brief') }}
+
+      <section class="panel chart-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Monthly financial performance</h2>
+            <p>Revenue, expense, and net profit across the selected period.</p>
+          </div>
+          <div class="chart-mode-bar" role="group" aria-label="Dashboard chart view" data-dash-modes>
+            <button type="button" class="chart-mode-btn on" data-mode="trajectory">Trajectory</button>
+            <button type="button" class="chart-mode-btn" data-mode="margin">Monthly margin %</button>
+          </div>
+        </div>
+        <div class="chart-box">
+          <canvas id="trend"></canvas>
+        </div>
+      </section>
+
+      <section class="split-asymmetric">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Calculated insights</h2>
+              <p>Observations derived from period totals and top-performing segments.</p>
+            </div>
+          </div>
+          {% if insights %}
+            <ul class="insights">
+              {% for insight in insights %}
+                <li>
+                  <span class="insight-dot" aria-hidden="true"></span>
+                  <span>{{ insight }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="muted">More than one reporting period is needed for trend insights.</p>
+          {% endif %}
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Explore performance</h2>
+              <p>Drill into segment profitability, outlier flags, forecasts, or scenarios.</p>
+            </div>
+          </div>
+          <div class="action-list">
+            <a class="action-row" href="{{ url_for('user_analytics', view='products') }}">
+              <span class="action-row-main">{{ icon('products', 16) }}<span>Product profitability</span></span>
+              <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+            </a>
+            <a class="action-row" href="{{ url_for('user_analytics', view='anomalies') }}">
+              <span class="action-row-main">{{ icon('anomalies', 16) }}<span>Potential anomalies</span></span>
+              <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+            </a>
+            <a class="action-row" href="{{ url_for('user_forecasting') }}">
+              <span class="action-row-main">{{ icon('forecasting', 16) }}<span>Revenue forecast</span></span>
+              <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+            </a>
+            <a class="action-row" href="{{ url_for('user_optimization') }}">
+              <span class="action-row-main">{{ icon('optimization', 16) }}<span>What-if analysis</span></span>
+              <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+            </a>
+          </div>
+        </article>
+      </section>
+
+      <script>
+        window.addEventListener('DOMContentLoaded', function () {
+          if (!window.Chart) return;
+          const series = {{ series|tojson }};
+          const canvas = document.getElementById('trend');
+          const p = window.FinancePulseCharts ? window.FinancePulseCharts.palette : {
+            cobalt: '#0066CC', cobaltSoft: 'rgba(0, 102, 204, 0.10)',
+            amber: '#C2590A', emerald: '#0E6027'
+          };
+          let chart = null;
+
+          function renderDashChart(mode) {
+            if (chart) chart.destroy();
+            const cfg = window.FinancePulseCharts ? window.FinancePulseCharts.defaults() : { responsive: true, maintainAspectRatio: false };
+            if (mode === 'margin') {
+              chart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                  labels: series.map(s => s.period),
+                  datasets: [{
+                    label: 'Net margin %',
+                    data: series.map(s => s.margin !== null && s.margin !== undefined ? Number(Number(s.margin).toFixed(2)) : 0),
+                    backgroundColor: series.map(s => (s.margin || 0) >= 0 ? 'rgba(14, 96, 39, 0.82)' : 'rgba(166, 27, 27, 0.82)'),
+                    borderRadius: 6
+                  }]
+                },
+                options: cfg
+              });
+              return;
+            }
+            chart = new Chart(canvas, {
+              type: 'line',
+              data: {
+                labels: series.map(s => s.period),
+                datasets: [
+                  {
+                    label: 'Revenue',
+                    data: series.map(s => s.revenue),
+                    borderColor: p.cobalt,
+                    backgroundColor: p.cobaltSoft,
+                    borderWidth: 2.25,
+                    tension: 0.28,
+                    fill: true,
+                    pointRadius: 3,
+                    pointHoverRadius: 5
+                  },
+                  {
+                    label: 'Expenses',
+                    data: series.map(s => s.expense),
+                    borderColor: p.amber,
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.28,
+                    pointRadius: 2.5,
+                    pointHoverRadius: 4.5
+                  },
+                  {
+                    label: 'Profit',
+                    data: series.map(s => s.profit),
+                    borderColor: p.emerald,
+                    backgroundColor: 'transparent',
+                    borderWidth: 2.25,
+                    tension: 0.28,
+                    pointRadius: 3,
+                    pointHoverRadius: 5
+                  }
+                ]
+              },
+              options: cfg
+            });
+          }
+
+          renderDashChart('trajectory');
+          const bar = document.querySelector('[data-dash-modes]');
+          if (bar) {
+            bar.querySelectorAll('.chart-mode-btn').forEach(btn => {
+              btn.addEventListener('click', () => {
+                bar.querySelectorAll('.chart-mode-btn').forEach(b => b.classList.toggle('on', b === btn));
+                renderDashChart(btn.getAttribute('data-mode'));
+              });
+            });
+          }
+        });
+      </script>
+    {% endif %}
+  {% endif %}
+{% endblock %}

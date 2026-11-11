@@ -1,0 +1,105 @@
+{% macro brand_mark(size=28) -%}
+<svg class="brand-glyph" width="{{ size }}" height="{{ size }}" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+  <rect x="0.5" y="0.5" width="27" height="27" rx="7.5" fill="var(--brand-bg, #1D1D1F)" stroke="rgba(255,255,255,0.12)"/>
+  <path d="M5.5 16.5H9.2L11.6 10.5L14.8 19.2L17.9 8.8L20.1 14.5H22.5" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="22.5" cy="14.5" r="1.4" fill="#3B9BFF"/>
+</svg>
+{%- endmacro %}
+
+{% macro icon(name, size=16) -%}
+<svg class="ui-icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  {% if name == 'dashboard' %}
+    <rect x="2.75" y="2.75" width="6.25" height="6.25" rx="1.5"/>
+    <rect x="11" y="2.75" width="6.25" height="4.25" rx="1.5"/>
+    <rect x="11" y="9" width="6.25" height="8.25" rx="1.5"/>
+    <rect x="2.75" y="11" width="6.25" height="6.25" rx="1.5"/>
+  {% elif name == 'overview' %}
+    <path d="M3 15.5H17"/>
+    <path d="M4.5 12L8.2 8.2L11.2 10.7L15.8 5.2"/>
+    <path d="M13 5.2H15.8V8"/>
+  {% elif name == 'products' %}
+    <path d="M10 2.75L16.25 6.25V13.75L10 17.25L3.75 13.75V6.25L10 2.75Z"/>
+    <path d="M3.75 6.25L10 9.75L16.25 6.25"/>
+    <path d="M10 9.75V17.25"/>
+  {% elif name == 'departments' %}
+    <rect x="3.5" y="3" width="13" height="14" rx="1.75"/>
+    <path d="M7.5 17V13.5H12.5V17"/>
+    <path d="M7.25 6.75H8.5M11.5 6.75H12.75M7.25 10H8.5M11.5 10H12.75"/>
+  {% elif name == 'categories' %}
+    <path d="M3.5 9.8V4.5C3.5 3.95 3.95 3.5 4.5 3.5H9.8L16.5 10.2L10.2 16.5L3.5 9.8Z"/>
+    <circle cx="7" cy="7" r="0.9" fill="currentColor" stroke="none"/>
+  {% elif name == 'regions' %}
+    <circle cx="10" cy="10" r="7"/>
+    <ellipse cx="10" cy="10" rx="3.1" ry="7"/>
+    <path d="M3.4 10H16.6"/>
+  {% elif name == 'anomalies' %}
+    <path d="M10 3.2L17 15.75H3L10 3.2Z"/>
+    <path d="M10 8V11.4"/>
+    <circle cx="10" cy="13.6" r="0.7" fill="currentColor" stroke="none"/>
+  {% elif name == 'forecasting' %}
+    <path d="M3 16.25H17"/>
+    <path d="M4.25 13L8.25 9.5L11.25 11.2"/>
+    <path d="M11.25 11.2L16.25 5.2" stroke-dasharray="2.2 2.2"/>
+    <circle cx="16.25" cy="5.2" r="1.2"/>
+  {% elif name == 'optimization' %}
+    <path d="M3.5 6H16.5M3.5 14H16.5M3.5 10H16.5"/>
+    <circle cx="7" cy="6" r="1.7" fill="var(--bg-surface, #FFFFFF)"/>
+    <circle cx="13" cy="10" r="1.7" fill="var(--bg-surface, #FFFFFF)"/>
+    <circle cx="8.5" cy="14" r="1.7" fill="var(--bg-surface, #FFFFFF)"/>
+  {% elif name == 'data' %}
+    <ellipse cx="10" cy="5.2" rx="6" ry="2.2"/>
+    <path d="M4 5.2V14.8C4 16 6.7 17 10 17C13.3 17 16 16 16 14.8V5.2"/>
+    <path d="M4 10C4 11.2 6.7 12.2 10 12.2C13.3 12.2 16 11.2 16 10"/>
+  {% elif name == 'users' %}
+    <circle cx="8" cy="7" r="2.6"/>
+    <path d="M3.25 16C3.5 13.4 5.4 12 8 12C10.6 12 12.5 13.4 12.75 16"/>
+    <circle cx="14.2" cy="7.8" r="1.8"/>
+    <path d="M14.2 12.1C15.8 12.3 16.9 13.5 17.2 15.6"/>
+  {% elif name == 'datasets' %}
+    <path d="M3.25 5.5C3.25 4.67 3.92 4 4.75 4H8.2L9.8 5.75H15.25C16.08 5.75 16.75 6.42 16.75 7.25V14.5C16.75 15.33 16.08 16 15.25 16H4.75C3.92 16 3.25 15.33 3.25 14.5V5.5Z"/>
+  {% elif name == 'settings' %}
+    <circle cx="10" cy="10" r="2.4"/>
+    <path d="M10 3V4.6M10 15.4V17M3 10H4.6M15.4 10H17M5.05 5.05L6.2 6.2M13.8 13.8L14.95 14.95M14.95 5.05L13.8 6.2M6.2 13.8L5.05 14.95"/>
+  {% elif name == 'upload' %}
+    <path d="M10 13.2V3.8M10 3.8L6.5 7.3M10 3.8L13.5 7.3"/>
+    <path d="M3.75 13.5V15.5C3.75 16.05 4.2 16.5 4.75 16.5H15.25C15.8 16.5 16.25 16.05 16.25 15.5V13.5"/>
+  {% elif name == 'download' %}
+    <path d="M10 3.5V12.8M10 12.8L6.5 9.3M10 12.8L13.5 9.3"/>
+    <path d="M3.75 13.5V15.5C3.75 16.05 4.2 16.5 4.75 16.5H15.25C15.8 16.5 16.25 16.05 16.25 15.5V13.5"/>
+  {% elif name == 'logout' %}
+    <path d="M8.5 3.5H5C4.17 3.5 3.5 4.17 3.5 5V15C3.5 15.83 4.17 16.5 5 16.5H8.5"/>
+    <path d="M12.8 6.5L16.3 10L12.8 13.5M7.5 10H16.2"/>
+  {% elif name == 'user-plus' %}
+    <circle cx="8" cy="7" r="2.6"/>
+    <path d="M3.25 16C3.5 13.4 5.4 12 8 12C10.4 12 12.2 13.2 12.6 15.6"/>
+    <path d="M15 8V13M12.5 10.5H17.5"/>
+  {% elif name == 'chevron-right' %}
+    <path d="M7.5 5.2L12.5 10L7.5 14.8"/>
+  {% elif name == 'arrow-right' %}
+    <path d="M4.2 10H15.8M11.6 5.8L15.8 10L11.6 14.2"/>
+  {% elif name == 'menu' %}
+    <path d="M3.5 5.8H16.5M3.5 10H16.5M3.5 14.2H16.5"/>
+  {% elif name == 'close' %}
+    <path d="M5 5L15 15M15 5L5 15"/>
+  {% elif name == 'eye' %}
+    <path d="M2.5 10C4.2 6.8 6.9 5.2 10 5.2C13.1 5.2 15.8 6.8 17.5 10C15.8 13.2 13.1 14.8 10 14.8C6.9 14.8 4.2 13.2 2.5 10Z"/>
+    <circle cx="10" cy="10" r="2.1"/>
+  {% elif name == 'eye-off' %}
+    <path d="M3.5 3.5L16.5 16.5"/>
+    <path d="M8.5 5.4C9 5.26 9.5 5.2 10 5.2C13.1 5.2 15.8 6.8 17.5 10C16.85 11.2 16 12.2 15 13"/>
+    <path d="M5.4 6.7C4.2 7.6 3.2 8.7 2.5 10C4.2 13.2 6.9 14.8 10 14.8C11.1 14.8 12.2 14.55 13.1 14.1"/>
+  {% elif name == 'check' %}
+    <path d="M4.5 10.5L8.2 14.2L15.5 6.5"/>
+  {% elif name == 'shield' %}
+    <path d="M10 2.8L16 5.2V9.8C16 13.3 13.4 16 10 17.2C6.6 16 4 13.3 4 9.8V5.2L10 2.8Z"/>
+    <path d="M7.6 10L9.4 11.8L12.8 8.2"/>
+  {% elif name == 'sparkles' or name == 'insights' %}
+    <path d="M4 14.5L7.6 9.8L10.8 12.2L15.8 5.5"/>
+    <circle cx="15.8" cy="5.5" r="1.2" fill="currentColor" stroke="none"/>
+  {% elif name == 'audit' %}
+    <path d="M5.5 3.5H12.5L15.5 6.5V16.5H5.5V3.5Z"/>
+    <path d="M12.2 3.5V6.8H15.5"/>
+    <path d="M8 10.2H13M8 13.2H11.5"/>
+  {% endif %}
+</svg>
+{%- endmacro %}

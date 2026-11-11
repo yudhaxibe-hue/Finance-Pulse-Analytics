@@ -1,0 +1,415 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import icon %}
+{% from '_intel_brief.html' import render_intel_brief %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+  <nav class="subnav-pills" aria-label="Analysis dimensions">
+    {% for key, label in [
+      ('overview', 'Financial Overview'),
+      ('products', 'Products'),
+      ('departments', 'Departments'),
+      ('categories', 'Categories'),
+      ('regions', 'Regions'),
+      ('anomalies', 'Potential Anomalies')
+    ] %}
+      <a class="{{ 'on' if view == key else '' }}" href="{{ url_for('user_analytics', view=key) }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  {{ render_intel_brief(brief, title ~ ' intelligence') }}
+
+  {% if rows %}
+    {% set chart_heads = {
+      'overview': ('Monthly cashflow & trajectory', 'Switch between cashflow bars + profit overlay, cumulative profit curve, or monthly net margin %.'),
+      'products': ('Product profitability profile', 'Explore net margin % ranking against threshold, revenue vs. profit totals, or contribution share.'),
+      'departments': ('Department operating mix', 'Compare departmental revenue, expenses, and net profit or inspect margin efficiency.'),
+      'categories': ('Category profit composition', 'Review profit share across categories, revenue vs. net earnings, or margin ranking.'),
+      'regions': ('Regional performance distribution', 'Inspect regional revenue and net profit ranking, margin efficiency, or profit mix.'),
+      'anomalies': ('Outlier magnitude vs. IQR threshold', 'Visualizes how far each flagged transaction exceeded the Q3 + k × IQR upper cutoff.')
+    } %}
+    {% set head_pair = chart_heads.get(view, (title ~ ' breakdown', description)) %}
+    <section class="panel chart-panel">
+      <div class="panel-head">
+        <div>
+          <h2>{{ head_pair[0] }}</h2>
+          <p>{{ head_pair[1] }}</p>
+        </div>
+        <div class="chart-mode-bar" role="group" aria-label="Chart visualization mode" data-analysis-modes>
+          {% if view == 'overview' %}
+            <button type="button" class="chart-mode-btn on" data-mode="combo">Cashflow vs. profit</button>
+            <button type="button" class="chart-mode-btn" data-mode="cumulative">Cumulative profit</button>
+            <button type="button" class="chart-mode-btn" data-mode="margin">Monthly margin %</button>
+          {% elif view == 'anomalies' %}
+            <button type="button" class="chart-mode-btn on" data-mode="threshold_fence">Outlier vs. cutoff</button>
+            <button type="button" class="chart-mode-btn" data-mode="excess">Excess above cutoff</button>
+          {% elif view == 'categories' %}
+            <button type="button" class="chart-mode-btn on" data-mode="share">Profit share</button>
+            <button type="button" class="chart-mode-btn" data-mode="margin_hbar">Margin %</button>
+            <button type="button" class="chart-mode-btn" data-mode="comparison">Revenue vs. profit</button>
+          {% elif view == 'products' %}
+            <button type="button" class="chart-mode-btn on" data-mode="margin_hbar">Margin % ranking</button>
+            <button type="button" class="chart-mode-btn" data-mode="hbar_rev_profit">Revenue vs. profit</button>
+            <button type="button" class="chart-mode-btn" data-mode="share">Profit share</button>
+          {% elif view == 'departments' %}
+            <button type="button" class="chart-mode-btn on" data-mode="rev_exp_prof">Revenue, expense &amp; profit</button>
+            <button type="button" class="chart-mode-btn" data-mode="margin_hbar">Margin %</button>
+            <button type="button" class="chart-mode-btn" data-mode="share">Profit share</button>
+          {% else %}
+            <button type="button" class="chart-mode-btn on" data-mode="hbar_rev_profit">Revenue vs. profit</button>
+            <button type="button" class="chart-mode-btn" data-mode="margin_hbar">Margin %</button>
+            <button type="button" class="chart-mode-btn" data-mode="share">Profit share</button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="chart-box compact">
+        <canvas id="analysisChart"></canvas>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>{{ 'Detected entries' if view == 'anomalies' else 'Detailed ledger' }}</h2>
+        <p>{{ description }}</p>
+      </div>
+    </div>
+
+    {% if rows %}
+      {% set num_cols = ['revenue', 'expense', 'cost', 'profit', 'margin', 'value'] %}
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              {% for c in columns %}
+                <th class="{{ 'num' if c in num_cols else '' }}">{{ c.replace('_', ' ').title() }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                {% for c in columns %}
+                  {% if c in num_cols %}
+                    {% set val = row[c] %}
+                    {% set tone = '' %}
+                    {% if c in ('profit', 'margin') and val is number %}
+                      {% set tone = 'pos' if val >= 0 else 'neg' %}
+                    {% endif %}
+                    <td class="num {{ tone }}">
+                      {% if val is number %}{{ '{:,.2f}'.format(val) }}{{ '%' if c == 'margin' else '' }}{% else %}—{% endif %}
+                    </td>
+                  {% elif c == 'type' %}
+                    <td>
+                      <span class="badge {{ 'negative' if row[c] == 'Expense' else 'accent' }}">{{ row[c] or '—' }}</span>
+                    </td>
+                  {% elif c == 'reason' %}
+                    <td class="wrap-cell">{{ row[c] or '—' }}</td>
+                  {% elif c in ('period', 'date') %}
+                    <td class="tabular">{{ row[c] or '—' }}</td>
+                  {% else %}
+                    <td>{{ row[c] or '—' }}</td>
+                  {% endif %}
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty small">
+        <div class="empty-glyph">{{ icon('anomalies' if view == 'anomalies' else 'overview', 20) }}</div>
+        <h2>{{ 'No anomalies flagged' if view == 'anomalies' else 'No applicable data' }}</h2>
+        <p>
+          {% if view == 'anomalies' %}
+            All imported revenue and expense entries currently fall within the configured IQR threshold.
+          {% else %}
+            Import transactions with the corresponding fields to view this analysis.
+          {% endif %}
+        </p>
+      </div>
+    {% endif %}
+  </section>
+
+  {% if rows %}
+    <script>
+      window.addEventListener('DOMContentLoaded', function () {
+        if (!window.Chart) return;
+        const rows = {{ rows|tojson }};
+        const view = {{ view|tojson }};
+        const labelKey = {{ columns[0]|tojson }};
+        const marginFloor = {{ margin_threshold|default(15.0)|tojson }};
+        const canvas = document.getElementById('analysisChart');
+        if (!canvas) return;
+        const p = window.FinancePulseCharts ? window.FinancePulseCharts.palette : {
+          cobalt: '#0066CC', cobaltSoft: 'rgba(0, 102, 204, 0.12)',
+          amber: '#C2590A', emerald: '#0E6027', graphite: '#1D1D1F', tick: '#636368'
+        };
+        const sharePalette = ['#0066CC', '#0E6027', '#1D1D1F', '#C2590A', '#4A6FA5', '#636368', '#2A8C4A'];
+        let chart = null;
+
+        function buildOptions(extra) {
+          const base = window.FinancePulseCharts ? window.FinancePulseCharts.defaults() : { responsive: true, maintainAspectRatio: false };
+          return Object.assign({}, base, extra || {});
+        }
+
+        function horizOptions() {
+          const base = window.FinancePulseCharts ? window.FinancePulseCharts.defaults() : { responsive: true, maintainAspectRatio: false };
+          const xScale = Object.assign({}, (base.scales && base.scales.y) || {}, { grid: { color: 'rgba(29, 29, 31, 0.06)' } });
+          const yScale = { grid: { display: false }, ticks: { color: '#515154', font: { size: 12, weight: '500' } } };
+          return Object.assign({}, base, { indexAxis: 'y', scales: { x: xScale, y: yScale } });
+        }
+
+        function renderAnalysisChart(mode) {
+          if (chart) chart.destroy();
+
+          if (view === 'overview') {
+            const labels = rows.map(r => r[labelKey]);
+            if (mode === 'cumulative') {
+              let running = 0;
+              const cum = rows.map(r => { running += Number(r.profit || 0); return Number(running.toFixed(2)); });
+              chart = new Chart(canvas, {
+                type: 'line',
+                data: {
+                  labels,
+                  datasets: [{
+                    label: 'Cumulative net profit',
+                    data: cum,
+                    borderColor: p.emerald,
+                    backgroundColor: 'rgba(14, 96, 39, 0.10)',
+                    borderWidth: 2.5,
+                    tension: 0.25,
+                    fill: true,
+                    pointRadius: 3
+                  }]
+                },
+                options: buildOptions()
+              });
+            } else if (mode === 'margin') {
+              chart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                  labels,
+                  datasets: [{
+                    label: 'Net margin %',
+                    data: rows.map(r => r.margin !== null && r.margin !== undefined ? Number(Number(r.margin).toFixed(2)) : 0),
+                    backgroundColor: rows.map(r => (r.margin || 0) >= marginFloor ? 'rgba(14, 96, 39, 0.82)' : 'rgba(194, 89, 10, 0.82)'),
+                    borderRadius: 6
+                  }]
+                },
+                options: buildOptions()
+              });
+            } else {
+              chart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                  labels,
+                  datasets: [
+                    {
+                      type: 'line',
+                      label: 'Net profit',
+                      data: rows.map(r => r.profit),
+                      borderColor: p.emerald,
+                      backgroundColor: p.emerald,
+                      borderWidth: 2.25,
+                      tension: 0.24,
+                      pointRadius: 3,
+                      order: 0
+                    },
+                    {
+                      label: 'Revenue',
+                      data: rows.map(r => r.revenue),
+                      backgroundColor: 'rgba(0, 102, 204, 0.78)',
+                      borderRadius: 5,
+                      order: 1
+                    },
+                    {
+                      label: 'Expenses',
+                      data: rows.map(r => r.expense),
+                      backgroundColor: 'rgba(194, 89, 10, 0.70)',
+                      borderRadius: 5,
+                      order: 2
+                    }
+                  ]
+                },
+                options: buildOptions()
+              });
+            }
+            return;
+          }
+
+          if (view === 'anomalies') {
+            const topFlags = rows.slice(0, 8);
+            const labels = topFlags.map(r => `${r.date} · ${r.entity}`);
+            if (mode === 'excess') {
+              chart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                  labels,
+                  datasets: [{
+                    label: 'Excess above IQR cutoff',
+                    data: topFlags.map(r => Math.max(0, Number((r.value - (r.threshold || r.value)).toFixed(2)))),
+                    backgroundColor: 'rgba(194, 89, 10, 0.85)',
+                    borderRadius: 6
+                  }]
+                },
+                options: horizOptions()
+              });
+            } else {
+              chart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                  labels,
+                  datasets: [
+                    {
+                      label: 'Flagged amount',
+                      data: topFlags.map(r => r.value),
+                      backgroundColor: 'rgba(166, 27, 27, 0.84)',
+                      borderRadius: 6
+                    },
+                    {
+                      label: 'IQR cutoff',
+                      data: topFlags.map(r => r.threshold || 0),
+                      backgroundColor: 'rgba(29, 29, 31, 0.25)',
+                      borderRadius: 6
+                    }
+                  ]
+                },
+                options: horizOptions()
+              });
+            }
+            return;
+          }
+
+          const topRows = rows.slice(0, 10);
+          const labels = topRows.map(r => r[labelKey] || 'Unassigned');
+
+          if (mode === 'share') {
+            const posRows = topRows.filter(r => Number(r.profit || 0) > 0);
+            if (posRows.length >= 2) {
+              const opts = buildOptions({ cutout: '62%' });
+              delete opts.scales;
+              chart = new Chart(canvas, {
+                type: 'doughnut',
+                data: {
+                  labels: posRows.map(r => r[labelKey] || 'Unassigned'),
+                  datasets: [{
+                    label: 'Profit share',
+                    data: posRows.map(r => Number(r.profit.toFixed(2))),
+                    backgroundColor: posRows.map((_, i) => sharePalette[i % sharePalette.length]),
+                    borderColor: '#FFFFFF',
+                    borderWidth: 2
+                  }]
+                },
+                options: opts
+              });
+              return;
+            }
+            mode = 'margin_hbar';
+          }
+
+          if (mode === 'margin_hbar') {
+            chart = new Chart(canvas, {
+              type: 'bar',
+              data: {
+                labels,
+                datasets: [{
+                  label: 'Net margin %',
+                  data: topRows.map(r => r.margin !== null && r.margin !== undefined ? Number(Number(r.margin).toFixed(2)) : 0),
+                  backgroundColor: topRows.map(r => (r.margin !== null && r.margin >= marginFloor) ? 'rgba(14, 96, 39, 0.84)' : 'rgba(194, 89, 10, 0.84)'),
+                  borderRadius: 6
+                }]
+              },
+              options: horizOptions()
+            });
+          } else if (mode === 'hbar_rev_profit') {
+            chart = new Chart(canvas, {
+              type: 'bar',
+              data: {
+                labels,
+                datasets: [
+                  {
+                    label: 'Revenue',
+                    data: topRows.map(r => r.revenue),
+                    backgroundColor: 'rgba(0, 102, 204, 0.84)',
+                    borderRadius: 6
+                  },
+                  {
+                    label: 'Net profit',
+                    data: topRows.map(r => r.profit),
+                    backgroundColor: 'rgba(14, 96, 39, 0.84)',
+                    borderRadius: 6
+                  }
+                ]
+              },
+              options: horizOptions()
+            });
+          } else if (mode === 'rev_exp_prof') {
+            chart = new Chart(canvas, {
+              type: 'bar',
+              data: {
+                labels,
+                datasets: [
+                  {
+                    label: 'Revenue',
+                    data: topRows.map(r => r.revenue),
+                    backgroundColor: 'rgba(0, 102, 204, 0.84)',
+                    borderRadius: 6
+                  },
+                  {
+                    label: 'Expenses',
+                    data: topRows.map(r => r.expense),
+                    backgroundColor: 'rgba(194, 89, 10, 0.74)',
+                    borderRadius: 6
+                  },
+                  {
+                    label: 'Net profit',
+                    data: topRows.map(r => r.profit),
+                    backgroundColor: 'rgba(14, 96, 39, 0.84)',
+                    borderRadius: 6
+                  }
+                ]
+              },
+              options: buildOptions()
+            });
+          } else {
+            chart = new Chart(canvas, {
+              type: 'bar',
+              data: {
+                labels,
+                datasets: [
+                  {
+                    label: 'Revenue',
+                    data: topRows.map(r => r.revenue),
+                    backgroundColor: 'rgba(0, 102, 204, 0.84)',
+                    borderRadius: 6
+                  },
+                  {
+                    label: 'Profit',
+                    data: topRows.map(r => r.profit),
+                    backgroundColor: 'rgba(14, 96, 39, 0.84)',
+                    borderRadius: 6
+                  }
+                ]
+              },
+              options: buildOptions()
+            });
+          }
+        }
+
+        const modeBar = document.querySelector('[data-analysis-modes]');
+        const activeBtn = modeBar ? modeBar.querySelector('.chart-mode-btn.on') : null;
+        renderAnalysisChart(activeBtn ? activeBtn.getAttribute('data-mode') : 'comparison');
+        if (modeBar) {
+          modeBar.querySelectorAll('.chart-mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              modeBar.querySelectorAll('.chart-mode-btn').forEach(b => b.classList.toggle('on', b === btn));
+              renderAnalysisChart(btn.getAttribute('data-mode'));
+            });
+          });
+        }
+      });
+    </script>
+  {% endif %}
+{% endblock %}

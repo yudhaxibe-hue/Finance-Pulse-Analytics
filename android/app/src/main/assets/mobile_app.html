@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Finance Pulse Analytics: Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform</title>
+  <link rel="stylesheet" href="mobile_app.css">
+</head>
+<body>
+  <header class="app-bar">
+    <div class="brand-lockup">
+      <svg class="brand-logo" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+        <rect x="0.5" y="0.5" width="27" height="27" rx="7.5" fill="#1D1D1F"/>
+        <path d="M5.5 16.5H9.2L11.6 10.5L14.8 19.2L17.9 8.8L20.1 14.5H22.5" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="22.5" cy="14.5" r="1.4" fill="#3B9BFF"/>
+      </svg>
+      <span class="brand-title">Finance Pulse</span>
+      <span class="currency-badge" id="currencyBadge">INR</span>
+    </div>
+    <div class="bar-actions">
+      <label class="btn" style="margin:0;">
+        Import
+        <input type="file" id="fileInput" accept=".csv,.json,text/csv,application/json" style="display:none;">
+      </label>
+      <button type="button" class="btn secondary" id="btnExportCsv">Export</button>
+    </div>
+  </header>
+
+  <main class="main-wrap">
+    <section id="tab-overview" class="tab-pane">
+      <div class="screen-header">
+        <h1 class="screen-title">Executive overview</h1>
+        <div class="ledger-status">
+          <span id="workspaceSummary">Loading workspace...</span>
+          <button type="button" class="btn quiet" id="btnLoadSample">Reset sample</button>
+        </div>
+      </div>
+
+      <div class="kpi-ledger" id="overviewKpis"></div>
+
+      <article class="intel-brief" id="overviewBrief"></article>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Monthly performance trend</h2>
+            <p class="panel-sub" id="overviewChartSub">Revenue, expense, and net profit progression</p>
+          </div>
+          <div class="mode-bar" id="overviewModeBar">
+            <button type="button" class="mode-btn is-active" data-mode="combo">Cashflow</button>
+            <button type="button" class="mode-btn" data-mode="cumulative">Cumulative</button>
+            <button type="button" class="mode-btn" data-mode="margin">Margin %</button>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="overviewCanvas"></canvas></div>
+      </section>
+    </section>
+
+    <section id="tab-segments" class="tab-pane hidden">
+      <div class="screen-header">
+        <h1 class="screen-title">Dimensional profitability</h1>
+        <div class="ledger-status">Rankings by product, department, category, and region</div>
+      </div>
+
+      <div class="mode-bar" id="dimensionPicker" aria-label="Choose segment dimension">
+        <button type="button" class="mode-btn is-active" data-dim="product">Products</button>
+        <button type="button" class="mode-btn" data-dim="department">Departments</button>
+        <button type="button" class="mode-btn" data-dim="category">Categories</button>
+        <button type="button" class="mode-btn" data-dim="region">Regions</button>
+      </div>
+
+      <article class="intel-brief" id="segmentBrief"></article>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 id="segmentChartTitle">Segment comparison</h2>
+            <p class="panel-sub" id="segmentChartSub">Switch visualization format</p>
+          </div>
+          <div class="mode-bar" id="segmentModeBar">
+            <button type="button" class="mode-btn is-active" data-mode="margin">Margin %</button>
+            <button type="button" class="mode-btn" data-mode="revprofit">Rev vs profit</button>
+            <button type="button" class="mode-btn" data-mode="share">Profit share</button>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="segmentCanvas"></canvas></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><div><h2>Segment ledger</h2></div></div>
+        <div class="table-wrap"><table id="segmentTable"></table></div>
+      </section>
+    </section>
+
+    <section id="tab-anomalies" class="tab-pane hidden">
+      <div class="screen-header">
+        <h1 class="screen-title">Anomaly surveillance</h1>
+        <div class="ledger-status">Deterministic interquartile range (IQR) outlier audit</div>
+      </div>
+
+      <article class="intel-brief" id="anomalyBrief"></article>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Outlier vs. cutoff</h2>
+            <p class="panel-sub">Flagged transactions above statistical bounds</p>
+          </div>
+          <div class="mode-bar" id="anomalyModeBar">
+            <button type="button" class="mode-btn is-active" data-mode="compare">Observed</button>
+            <button type="button" class="mode-btn" data-mode="excess">Excess delta</button>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="anomalyCanvas"></canvas></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><div><h2>Flagged entries</h2></div></div>
+        <div class="table-wrap"><table id="anomalyTable"></table></div>
+      </section>
+    </section>
+
+    <section id="tab-forecast" class="tab-pane hidden">
+      <div class="screen-header">
+        <h1 class="screen-title">Forecast &amp; margin solver</h1>
+        <div class="ledger-status">Linear regression projection and profit target optimization</div>
+      </div>
+
+      <article class="intel-brief" id="forecastBrief"></article>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Linear trend forecast</h2>
+            <p class="panel-sub" id="forecastMetricsText">Historical OLS projection with error backtesting</p>
+          </div>
+          <div style="min-width:130px;">
+            <label class="field">Horizon
+              <select id="forecastMonths">
+                <option value="3">3 months</option>
+                <option value="6" selected>6 months</option>
+                <option value="12">12 months</option>
+                <option value="18">18 months</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="forecastCanvas"></canvas></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Target-Margin Solver &amp; What-If</h2>
+            <p class="panel-sub">Compute break-even revenue and exact adjustment levers</p>
+          </div>
+        </div>
+        <div class="form-grid">
+          <label class="field">Target profit margin: <span id="targetMarginVal" class="num">25%</span>
+            <input type="range" id="targetMarginRange" min="5" max="60" value="25" step="1">
+          </label>
+          <div class="solver-summary" id="solverSummary"></div>
+          <label class="field">Revenue delta: <span id="simRevVal" class="num">+10%</span>
+            <input type="range" id="simRevRange" min="-40" max="60" value="10" step="1">
+          </label>
+          <label class="field">Expense delta: <span id="simExpVal" class="num">-5%</span>
+            <input type="range" id="simExpRange" min="-40" max="40" value="-5" step="1">
+          </label>
+        </div>
+        <div class="kpi-ledger" id="simKpis" style="margin-top:14px;"></div>
+      </section>
+    </section>
+
+    <section id="tab-connect" class="tab-pane hidden">
+      <div class="screen-header">
+        <h1 class="screen-title">Settings &amp; server link</h1>
+        <div class="ledger-status">Configure local thresholds or switch to a live Finance Pulse server</div>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><div><h2>Analytical thresholds</h2></div></div>
+        <div class="form-grid">
+          <label class="field">Currency code
+            <select id="cfgCurrency">
+              <option value="INR">INR</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+            </select>
+          </label>
+          <label class="field">Margin floor (%)
+            <input type="number" id="cfgMargin" value="15" min="0" max="100" step="1">
+          </label>
+          <label class="field">Anomaly IQR multiplier
+            <input type="number" id="cfgIqr" value="1.5" min="0.5" max="10" step="0.1">
+          </label>
+          <div style="display:flex;align-items:flex-end;">
+            <button type="button" class="btn" id="btnApplySettings">Save settings</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Live desktop / hosted server</h2>
+            <p class="panel-sub">Connect to a LAN workstation or deployed cloud Flask server</p>
+          </div>
+        </div>
+        <div class="form-grid">
+          <label class="field">Server URL
+            <input type="url" id="serverUrlInput" placeholder="http://192.168.1.25:5000">
+          </label>
+          <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn" id="btnConnectServer">Connect server</button>
+            <button type="button" class="btn secondary" id="btnResetData">Clear local cache</button>
+          </div>
+        </div>
+        <div class="status-banner" id="serverStatus" style="margin-top:12px;">
+          Running in 100% offline local mode on device.
+        </div>
+      </section>
+
+      <section class="panel">
+        <p class="about-title">Finance Pulse Analytics</p>
+        <p class="about-copy">Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform</p>
+      </section>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" aria-label="Primary Android navigation">
+    <button type="button" class="nav-item is-active" data-tab="overview">
+      <span class="nav-icon-pill">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="2.75" y="2.75" width="6.25" height="6.25" rx="1.5"/>
+          <rect x="11" y="2.75" width="6.25" height="4.25" rx="1.5"/>
+          <rect x="11" y="9" width="6.25" height="8.25" rx="1.5"/>
+          <rect x="2.75" y="11" width="6.25" height="6.25" rx="1.5"/>
+        </svg>
+      </span>
+      <span>Overview</span>
+    </button>
+    <button type="button" class="nav-item" data-tab="segments">
+      <span class="nav-icon-pill">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10 2.75L16.25 6.25V13.75L10 17.25L3.75 13.75V6.25L10 2.75Z"/>
+          <path d="M3.75 6.25L10 9.75L16.25 6.25"/>
+          <path d="M10 9.75V17.25"/>
+        </svg>
+      </span>
+      <span>Segments</span>
+    </button>
+    <button type="button" class="nav-item" data-tab="anomalies">
+      <span class="nav-icon-pill">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10 3.2L17 15.75H3L10 3.2Z"/>
+          <path d="M10 8V11.4"/>
+          <circle cx="10" cy="13.6" r="0.7" fill="currentColor" stroke="none"/>
+        </svg>
+      </span>
+      <span>Anomalies</span>
+    </button>
+    <button type="button" class="nav-item" data-tab="forecast">
+      <span class="nav-icon-pill">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 16.25H17"/>
+          <path d="M4.25 13L8.25 9.5L11.25 11.2"/>
+          <path d="M11.25 11.2L16.25 5.2" stroke-dasharray="2.2 2.2"/>
+          <circle cx="16.25" cy="5.2" r="1.2"/>
+        </svg>
+      </span>
+      <span>Forecast</span>
+    </button>
+    <button type="button" class="nav-item" data-tab="connect">
+      <span class="nav-icon-pill">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="10" cy="10" r="2.4"/>
+          <path d="M10 3V4.6M10 15.4V17M3 10H4.6M15.4 10H17M5.05 5.05L6.2 6.2M13.8 13.8L14.95 14.95M14.95 5.05L13.8 6.2M6.2 13.8L5.05 14.95"/>
+        </svg>
+      </span>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <script src="chart.umd.min.js"></script>
+  <script src="sample_data.js"></script>
+  <script src="mobile_app.js"></script>
+</body>
+</html>

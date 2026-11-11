@@ -1,0 +1,24 @@
+{% macro render_intel_brief(brief, label='Explainable intelligence') %}
+  {% if brief and brief.pillars %}
+    <section class="intel-brief" aria-label="{{ label }}">
+      <div class="intel-brief-bar">
+        <div class="intel-brief-title">
+          <span class="intel-pulse-dot" aria-hidden="true"></span>
+          <span>{{ label }}</span>
+        </div>
+        {% if brief.action %}
+          <a class="intel-brief-link" href="{{ url_for(brief.action.endpoint) }}">{{ brief.action.label }} &rarr;</a>
+        {% endif %}
+      </div>
+      <div class="intel-grid">
+        {% for item in brief.pillars %}
+          <div class="intel-col">
+            <span class="intel-step">{{ item.step }}</span>
+            <h2 class="intel-headline">{{ item.headline }}</h2>
+            <p class="intel-detail">{{ item.detail }}</p>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+{% endmacro %}

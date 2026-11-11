@@ -1,0 +1,153 @@
+{% from '_icons.html' import brand_mark, icon %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block page_title %}Dashboard{% endblock %} · {{ app_title }}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/forecast.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/portal.css') }}">
+  <script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='js/ui.js') }}"></script>
+</head>
+<body class="app-shell">
+  <div class="drawer-backdrop" aria-hidden="true"></div>
+
+  <aside class="app-sidebar" id="app-sidebar" aria-label="Workspace navigation">
+    <div class="sidebar-top">
+      <a class="brand" href="{{ url_for('admin_dashboard' if portal=='admin' else 'user_dashboard') }}">
+        {{ brand_mark(28) }}
+        <span class="brand-text">
+          <span>{{ app_name }}</span>
+          <span class="brand-portal">{{ 'Admin Portal' if portal=='admin' else 'User Portal' }}</span>
+        </span>
+      </a>
+      <button type="button" class="drawer-close" data-drawer-close aria-label="Close navigation">
+        {{ icon('close', 16) }}
+      </button>
+    </div>
+
+    {% if portal == 'admin' %}
+      <nav class="app-nav">
+        <a class="{{ 'on' if active=='admin_dashboard' else '' }}" href="{{ url_for('admin_dashboard') }}">
+          {{ icon('dashboard', 16) }}<span>Dashboard</span>
+        </a>
+        <div class="nav-group">Management</div>
+        <a class="{{ 'on' if active=='admin_users' else '' }}" href="{{ url_for('admin_users') }}">
+          {{ icon('users', 16) }}<span>Users</span>
+        </a>
+        <a class="{{ 'on' if active=='admin_datasets' else '' }}" href="{{ url_for('admin_datasets') }}">
+          {{ icon('datasets', 16) }}<span>Datasets &amp; imports</span>
+        </a>
+        <a class="{{ 'on' if active=='admin_audit' else '' }}" href="{{ url_for('admin_audit') }}">
+          {{ icon('audit', 16) }}<span>Audit logs</span>
+        </a>
+        <div class="nav-group">Settings</div>
+        <a class="{{ 'on' if active=='admin_settings' else '' }}" href="{{ url_for('admin_settings') }}">
+          {{ icon('settings', 16) }}<span>System settings</span>
+        </a>
+      </nav>
+    {% else %}
+      <nav class="app-nav">
+        <a class="{{ 'on' if active=='user_dashboard' else '' }}" href="{{ url_for('user_dashboard') }}">
+          {{ icon('dashboard', 16) }}<span>Dashboard</span>
+        </a>
+        <div class="nav-group">Analysis</div>
+        <a class="{{ 'on' if active=='user_analytics' and view=='overview' else '' }}" href="{{ url_for('user_analytics', view='overview') }}">
+          {{ icon('overview', 16) }}<span>Financial Overview</span>
+        </a>
+        <a class="{{ 'on' if active=='user_analytics' and view=='products' else '' }}" href="{{ url_for('user_analytics', view='products') }}">
+          {{ icon('products', 16) }}<span>Product Analysis</span>
+        </a>
+        <a class="{{ 'on' if active=='user_analytics' and view=='departments' else '' }}" href="{{ url_for('user_analytics', view='departments') }}">
+          {{ icon('departments', 16) }}<span>Department Analysis</span>
+        </a>
+        <a class="{{ 'on' if active=='user_analytics' and view=='categories' else '' }}" href="{{ url_for('user_analytics', view='categories') }}">
+          {{ icon('categories', 16) }}<span>Category Analysis</span>
+        </a>
+        <a class="{{ 'on' if active=='user_analytics' and view=='regions' else '' }}" href="{{ url_for('user_analytics', view='regions') }}">
+          {{ icon('regions', 16) }}<span>Region Analysis</span>
+        </a>
+        <a class="{{ 'on' if active=='user_analytics' and view=='anomalies' else '' }}" href="{{ url_for('user_analytics', view='anomalies') }}">
+          {{ icon('anomalies', 16) }}<span>Potential Anomalies</span>
+        </a>
+        <div class="nav-group">Planning</div>
+        <a class="{{ 'on' if active=='user_forecasting' else '' }}" href="{{ url_for('user_forecasting') }}">
+          {{ icon('forecasting', 16) }}<span>Forecasting</span>
+        </a>
+        <a class="{{ 'on' if active=='user_optimization' else '' }}" href="{{ url_for('user_optimization') }}">
+          {{ icon('optimization', 16) }}<span>What-if &amp; Optimization</span>
+        </a>
+        <div class="nav-group">Data</div>
+        <a class="{{ 'on' if active=='user_data' else '' }}" href="{{ url_for('user_data') }}">
+          {{ icon('data', 16) }}<span>Import &amp; My Data</span>
+        </a>
+      </nav>
+    {% endif %}
+
+    <div class="sidebottom">
+      {% set uname = current_user['name'] if current_user else '' %}
+      {% if uname %}
+        <div class="account-pill">
+          <span class="account-avatar" aria-hidden="true">{{ uname[0]|upper }}</span>
+          <span class="account-name">{{ uname }}</span>
+        </div>
+      {% endif %}
+      {% if portal != 'admin' %}
+        <a href="{{ url_for('register') }}">
+          {{ icon('user-plus', 15) }}<span>Create another account</span>
+        </a>
+      {% endif %}
+      <a href="{{ url_for('logout') }}">
+        {{ icon('logout', 15) }}<span>Log out</span>
+      </a>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <header class="app-header">
+      <div class="app-header-left">
+        <button type="button" class="menu-toggle" data-drawer-open aria-controls="app-sidebar" aria-expanded="false" aria-label="Open navigation">
+          {{ icon('menu', 18) }}
+        </button>
+        <div class="title-block">
+          <h1>{% block title %}Dashboard{% endblock %}</h1>
+          <div class="header-meta">
+            <span>{{ 'System management, governance & audit trail' if portal=='admin' else 'Enterprise financial performance & profitability analytics' }}</span>
+            <span class="currency-pill">{{ currency }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="header-actions">
+        {% if portal == 'user' %}
+          <a class="button secondary" href="{{ url_for('user_export') }}" download="finance_pulse_export.csv">
+            {{ icon('download', 15) }}<span>Export CSV</span>
+          </a>
+          <a class="button secondary" href="{{ url_for('user_report') }}" download="finance_pulse_summary.pdf">
+            {{ icon('download', 15) }}<span>Export PDF</span>
+          </a>
+          <a class="button" href="{{ url_for('user_data') }}">
+            {{ icon('upload', 15) }}<span>Import data</span>
+          </a>
+        {% endif %}
+      </div>
+    </header>
+
+    <div class="app-content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-stack">
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</body>
+</html>

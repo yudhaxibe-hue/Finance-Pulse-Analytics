@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import icon %}
+{% block page_title %}User management{% endblock %}
+{% block title %}User management{% endblock %}
+{% block content %}
+  <section class="two">
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Add administrator</h2>
+          <p>Only existing administrators can create additional administrator accounts.</p>
+        </div>
+      </div>
+      <form method="post" class="stack">
+        <label>Name<input name="name" required></label>
+        <label>Email<input type="email" name="email" required></label>
+        <label>Temporary password<input type="password" name="password" minlength="8" required></label>
+        <button>Create administrator</button>
+      </form>
+    </article>
+
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Account rules</h2>
+          <p>Isolation and permission boundaries enforced across portals.</p>
+        </div>
+      </div>
+      <ul class="spec-list">
+        <li>{{ icon('shield', 16) }}<span>Regular accounts register only from the User Portal and cannot elevate roles.</span></li>
+        <li>{{ icon('check', 16) }}<span>Each account is assigned an isolated workspace for datasets and scenarios.</span></li>
+        <li>{{ icon('check', 16) }}<span>Passwords require at least 8 characters and are hashed with PBKDF2-SHA256.</span></li>
+      </ul>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>All accounts</h2>
+        <p>Registered users and administrators with aggregate dataset and record counts.</p>
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table class="users-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th>Created</th>
+            <th>Datasets</th>
+            <th>Records</th>
+            <th>Status</th>
+            <th>Governance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            <tr>
+              <td><strong>{{ user.name }}</strong><br><span class="muted">{{ user.email }}</span></td>
+              <td><span class="badge {{ 'accent' if user.role == 'admin' else '' }}">{{ user.role }}</span></td>
+              <td class="tabular">{{ user.created_at[:10] }}</td>
+              <td>{{ user.dataset_count }}</td>
+              <td>{{ user.record_count }}</td>
+              <td><span class="badge {{ 'positive' if user.status == 'active' else 'negative' }}">{{ user.status }}</span></td>
+              <td>
+                {% if current_user and user.id == current_user['id'] %}
+                  <span class="muted">Current session</span>
+                {% else %}
+                  <form method="post" action="{{ url_for('admin_toggle_user_status', user_id=user.id) }}" class="inline-action">
+                    <button class="button secondary compact" type="submit">
+                      {{ 'Suspend' if user.status == 'active' else 'Activate' }}
+                    </button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

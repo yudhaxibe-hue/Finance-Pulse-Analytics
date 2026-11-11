@@ -1,0 +1,36 @@
+# Python & Virtual Environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local runtime state & secrets
+.flask_secret
+*.db
+*.sqlite*
+data/uploads/*
+!data/uploads/.gitkeep
+
+# PyInstaller build outputs & private owner Admin tools
+build/
+dist/
+dist_private/
+release-dist/
+packaging/private/
+*.spec.bak
+
+# Android local Gradle build, binaries & local SDK config
+android/.gradle/
+android/local.properties
+android/app/build/
+android/build/
+android/*.iml
+android/.idea/
+*.apk
+*.aab
+
+# Local tooling caches & review artifacts
+.agent/
+.impeccable/
+.DS_Store

@@ -1,0 +1,121 @@
+Date,Transaction ID,Transaction Type,Category,Product,Department,Region,Revenue,Expense,Cost,Quantity,Unit Price,Investment,Notes
+2024-01-12,FP-0001,Sale,Software,Core Suite,Product,North,82742.45,42827.57,20685.61,88,1654.85,0,Fictional sample transaction
+2024-01-14,FP-0002,Sale,Software,Insight Pro,Product,South,88465.08,40953.84,22116.27,98,1769.3,0,Fictional sample transaction
+2024-01-14,FP-0003,Sale,Consulting,Advisory,Services,North,81150.56,45527.53,20287.64,30,1623.01,0,Fictional sample transaction
+2024-01-06,FP-0004,Sale,Services,Support Plan,Customer Success,South,72322.6,45763.13,18080.65,94,1446.45,0,Fictional sample transaction
+2024-02-15,FP-0005,Sale,Software,Core Suite,Product,North,82994.28,53749.95,20748.57,55,1659.89,5000,Fictional sample transaction
+2024-02-23,FP-0006,Sale,Software,Insight Pro,Product,South,74666.37,44958.49,18666.59,25,1493.33,0,Fictional sample transaction
+2024-02-05,FP-0007,Sale,Consulting,Advisory,Services,North,90306.05,52106.99,22576.51,80,1806.12,0,Fictional sample transaction
+2024-02-12,FP-0008,Sale,Services,Support Plan,Customer Success,South,76271.63,49832.26,19067.91,91,1525.43,0,Fictional sample transaction
+2024-03-10,FP-0009,Sale,Software,Core Suite,Product,North,80945.05,45237.92,20236.26,57,1618.9,0,Fictional sample transaction
+2024-03-19,FP-0010,Sale,Software,Insight Pro,Product,South,88089.0,53273.05,22022.25,74,1761.78,5000,Fictional sample transaction
+2024-03-11,FP-0011,Sale,Consulting,Advisory,Services,North,104074.83,57825.55,26018.71,46,2081.5,0,Fictional sample transaction
+2024-03-21,FP-0012,Sale,Services,Support Plan,Customer Success,South,77476.05,47799.53,19369.01,35,1549.52,0,Fictional sample transaction
+2024-04-09,FP-0013,Sale,Software,Core Suite,Product,North,86174.47,45637.19,21543.62,38,1723.49,0,Fictional sample transaction
+2024-04-05,FP-0014,Sale,Software,Insight Pro,Product,South,93055.34,58121.92,23263.83,86,1861.11,0,Fictional sample transaction
+2024-04-20,FP-0015,Sale,Consulting,Advisory,Services,North,76659.24,46960.63,19164.81,86,1533.18,5000,Fictional sample transaction
+2024-04-23,FP-0016,Sale,Services,Support Plan,Customer Success,South,89289.45,52413.01,22322.36,43,1785.79,0,Fictional sample transaction
+2024-05-21,FP-0017,Sale,Software,Core Suite,Product,North,97442.86,57824.13,24360.71,35,1948.86,0,Fictional sample transaction
+2024-05-20,FP-0018,Sale,Software,Insight Pro,Product,South,90208.21,53885.62,22552.05,73,1804.16,0,Fictional sample transaction
+2024-05-15,FP-0019,Sale,Consulting,Advisory,Services,North,76485.6,42894.63,19121.4,56,1529.71,0,Fictional sample transaction
+2024-05-07,FP-0020,Sale,Services,Support Plan,Customer Success,South,83850.1,47248.82,20962.52,29,1677.0,5000,Fictional sample transaction
+2024-06-22,FP-0021,Sale,Software,Core Suite,Product,North,84207.52,53732.54,21051.88,65,1684.15,0,Fictional sample transaction
+2024-06-15,FP-0022,Sale,Software,Insight Pro,Product,South,88986.03,52480.87,22246.51,64,1779.72,0,Fictional sample transaction
+2024-06-16,FP-0023,Sale,Consulting,Advisory,Services,North,98401.04,61756.57,24600.26,22,1968.02,0,Fictional sample transaction
+2024-06-08,FP-0024,Sale,Services,Support Plan,Customer Success,South,87838.83,55468.34,21959.71,52,1756.78,0,Fictional sample transaction
+2024-07-21,FP-0025,Sale,Software,Core Suite,Product,North,82918.82,42454.67,20729.71,24,1658.38,5000,Fictional sample transaction
+2024-07-12,FP-0026,Sale,Software,Insight Pro,Product,South,98874.45,58192.12,24718.61,72,1977.49,0,Fictional sample transaction
+2024-07-25,FP-0027,Sale,Consulting,Advisory,Services,North,90554.73,53383.13,22638.68,73,1811.09,0,Fictional sample transaction
+2024-07-09,FP-0028,Sale,Services,Support Plan,Customer Success,South,91615.88,55648.08,22903.97,33,1832.32,0,Fictional sample transaction
+2024-08-20,FP-0029,Sale,Software,Core Suite,Product,North,93532.52,52106.56,23383.13,77,1870.65,0,Fictional sample transaction
+2024-08-23,FP-0030,Sale,Software,Insight Pro,Product,South,101182.75,55836.27,25295.69,60,2023.66,5000,Fictional sample transaction
+2024-08-13,FP-0031,Sale,Consulting,Advisory,Services,North,101126.72,61362.87,25281.68,55,2022.53,0,Fictional sample transaction
+2024-08-18,FP-0032,Sale,Services,Support Plan,Customer Success,South,95913.63,53193.9,23978.41,70,1918.27,0,Fictional sample transaction
+2024-09-10,FP-0033,Sale,Software,Core Suite,Product,North,84013.99,41433.45,21003.5,29,1680.28,0,Fictional sample transaction
+2024-09-13,FP-0034,Sale,Software,Insight Pro,Product,South,90224.78,54494.54,22556.19,75,1804.5,0,Fictional sample transaction
+2024-09-08,FP-0035,Sale,Consulting,Advisory,Services,North,95796.54,63029.69,23949.13,82,1915.93,5000,Fictional sample transaction
+2024-09-19,FP-0036,Sale,Services,Support Plan,Customer Success,South,105837.64,55457.12,26459.41,41,2116.75,0,Fictional sample transaction
+2024-10-05,FP-0037,Sale,Software,Core Suite,Product,North,93049.8,52076.07,23262.45,56,1861.0,0,Fictional sample transaction
+2024-10-21,FP-0038,Sale,Software,Insight Pro,Product,South,86054.12,52154.42,21513.53,66,1721.08,0,Fictional sample transaction
+2024-10-02,FP-0039,Sale,Consulting,Advisory,Services,North,96252.65,47475.32,24063.16,80,1925.05,0,Fictional sample transaction
+2024-10-09,FP-0040,Sale,Services,Support Plan,Customer Success,South,96834.57,57515.91,24208.64,70,1936.69,5000,Fictional sample transaction
+2024-11-17,FP-0041,Sale,Software,Core Suite,Product,North,118416.01,66980.67,29604.0,26,2368.32,0,Fictional sample transaction
+2024-11-06,FP-0042,Sale,Software,Insight Pro,Product,South,105613.48,62649.9,26403.37,59,2112.27,0,Fictional sample transaction
+2024-11-18,FP-0043,Sale,Consulting,Advisory,Services,North,111516.0,67067.09,27879.0,28,2230.32,0,Fictional sample transaction
+2024-11-09,FP-0044,Sale,Services,Support Plan,Customer Success,South,93301.13,50533.28,23325.28,94,1866.02,0,Fictional sample transaction
+2024-12-16,FP-0045,Sale,Software,Core Suite,Product,North,102891.71,51178.22,25722.93,67,2057.83,5000,Fictional sample transaction
+2024-12-12,FP-0046,Sale,Software,Insight Pro,Product,South,104400.0,51338.87,26100.0,58,2088.0,0,Fictional sample transaction
+2024-12-08,FP-0047,Sale,Consulting,Advisory,Services,North,109221.62,68841.04,27305.41,58,2184.43,0,Fictional sample transaction
+2024-12-05,FP-0048,Sale,Services,Support Plan,Customer Success,South,132624.76,80220.02,33156.19,65,2652.5,0,Fictional sample transaction
+2025-01-24,FP-0049,Sale,Software,Core Suite,Product,North,89611.58,53414.12,22402.9,46,1792.23,0,Fictional sample transaction
+2025-01-08,FP-0050,Sale,Software,Insight Pro,Product,South,105061.78,57077.36,26265.45,21,2101.24,5000,Fictional sample transaction
+2025-01-15,FP-0051,Sale,Consulting,Advisory,Services,North,118393.82,69784.03,29598.46,31,2367.88,0,Fictional sample transaction
+2025-01-17,FP-0052,Sale,Services,Support Plan,Customer Success,South,99479.12,47702.13,24869.78,73,1989.58,0,Fictional sample transaction
+2025-02-24,FP-0053,Sale,Software,Core Suite,Product,North,110715.96,75959.54,27678.99,81,2214.32,0,Fictional sample transaction
+2025-02-25,FP-0054,Sale,Software,Insight Pro,Product,South,120044.66,66029.63,30011.16,38,2400.89,0,Fictional sample transaction
+2025-02-15,FP-0055,Sale,Consulting,Advisory,Services,North,102513.95,54997.34,25628.49,49,2050.28,5000,Fictional sample transaction
+2025-02-25,FP-0056,Sale,Services,Support Plan,Customer Success,South,103807.52,65430.85,25951.88,45,2076.15,0,Fictional sample transaction
+2025-03-16,FP-0057,Sale,Software,Core Suite,Product,North,121984.16,73568.29,30496.04,61,2439.68,0,Fictional sample transaction
+2025-03-06,FP-0058,Sale,Software,Insight Pro,Product,South,113233.14,61226.6,28308.28,33,2264.66,0,Fictional sample transaction
+2025-03-25,FP-0059,Sale,Consulting,Advisory,Services,North,109505.15,55460.38,27376.29,99,2190.1,0,Fictional sample transaction
+2025-03-22,FP-0060,Sale,Services,Support Plan,Customer Success,South,115153.29,77699.16,28788.32,91,2303.07,5000,Fictional sample transaction
+2025-04-13,FP-0061,Sale,Software,Core Suite,Product,North,114932.26,68631.75,28733.06,45,2298.65,0,Fictional sample transaction
+2025-04-11,FP-0062,Sale,Software,Insight Pro,Product,South,117974.44,65516.44,29493.61,49,2359.49,0,Fictional sample transaction
+2025-04-11,FP-0063,Sale,Consulting,Advisory,Services,North,119858.81,80562.54,29964.7,40,2397.18,0,Fictional sample transaction
+2025-04-02,FP-0064,Sale,Services,Support Plan,Customer Success,South,104979.78,52270.53,26244.94,29,2099.6,0,Fictional sample transaction
+2025-05-19,FP-0065,Sale,Software,Core Suite,Product,North,133912.99,76227.14,33478.25,34,2678.26,5000,Fictional sample transaction
+2025-05-08,FP-0066,Sale,Software,Insight Pro,Product,South,131553.0,67562.63,32888.25,44,2631.06,0,Fictional sample transaction
+2025-05-13,FP-0067,Sale,Consulting,Advisory,Services,North,124189.94,69089.81,31047.49,60,2483.8,0,Fictional sample transaction
+2025-05-06,FP-0068,Sale,Services,Support Plan,Customer Success,South,116929.01,70187.16,29232.25,38,2338.58,0,Fictional sample transaction
+2025-06-25,FP-0069,Sale,Software,Core Suite,Product,North,121615.26,75235.62,30403.82,29,2432.31,0,Fictional sample transaction
+2025-06-20,FP-0070,Sale,Software,Insight Pro,Product,South,120361.53,63720.14,30090.38,66,2407.23,5000,Fictional sample transaction
+2025-06-02,FP-0071,Sale,Consulting,Advisory,Services,North,112896.63,63216.76,28224.16,77,2257.93,0,Fictional sample transaction
+2025-06-12,FP-0072,Sale,Services,Support Plan,Customer Success,South,108862.47,63340.31,27215.62,29,2177.25,0,Fictional sample transaction
+2025-07-25,FP-0073,Sale,Software,Core Suite,Product,North,127596.63,70299.34,31899.16,44,2551.93,0,Fictional sample transaction
+2025-07-09,FP-0074,Sale,Software,Insight Pro,Product,South,132224.82,80959.53,33056.21,96,2644.5,0,Fictional sample transaction
+2025-07-13,FP-0075,Sale,Consulting,Advisory,Services,North,121809.45,65563.14,30452.36,21,2436.19,5000,Fictional sample transaction
+2025-07-22,FP-0076,Sale,Services,Support Plan,Customer Success,South,125382.47,74050.19,31345.62,28,2507.65,0,Fictional sample transaction
+2025-08-02,FP-0077,Sale,Software,Core Suite,Product,North,126414.41,75051.44,31603.6,97,2528.29,0,Fictional sample transaction
+2025-08-19,FP-0078,Sale,Software,Insight Pro,Product,South,142491.6,75350.33,35622.9,84,2849.83,0,Fictional sample transaction
+2025-08-22,FP-0079,Sale,Consulting,Advisory,Services,North,112429.02,61224.08,28107.26,21,2248.58,0,Fictional sample transaction
+2025-08-08,FP-0080,Sale,Services,Support Plan,Customer Success,South,136452.68,73173.43,34113.17,83,2729.05,5000,Fictional sample transaction
+2025-09-20,FP-0081,Sale,Software,Core Suite,Product,North,108674.4,61970.49,27168.6,68,2173.49,0,Fictional sample transaction
+2025-09-04,FP-0082,Sale,Software,Insight Pro,Product,South,123235.05,64992.73,30808.76,72,2464.7,0,Fictional sample transaction
+2025-09-14,FP-0083,Sale,Consulting,Advisory,Services,North,112180.44,121418.51,28045.11,39,2243.61,0,Fictional sample transaction
+2025-09-22,FP-0084,Sale,Services,Support Plan,Customer Success,South,116413.2,59858.84,29103.3,85,2328.26,0,Fictional sample transaction
+2025-10-13,FP-0085,Sale,Software,Core Suite,Product,North,156545.6,79792.23,39136.4,67,3130.91,5000,Fictional sample transaction
+2025-10-09,FP-0086,Sale,Software,Insight Pro,Product,South,133474.0,91259.09,33368.5,44,2669.48,0,Fictional sample transaction
+2025-10-16,FP-0087,Sale,Consulting,Advisory,Services,North,128192.5,80330.58,32048.12,33,2563.85,0,Fictional sample transaction
+2025-10-12,FP-0088,Sale,Services,Support Plan,Customer Success,South,127014.6,72648.62,31753.65,29,2540.29,0,Fictional sample transaction
+2025-11-06,FP-0089,Sale,Software,Core Suite,Product,North,130656.44,73692.42,32664.11,33,2613.13,0,Fictional sample transaction
+2025-11-14,FP-0090,Sale,Software,Insight Pro,Product,South,127802.06,77741.01,31950.51,74,2556.04,5000,Fictional sample transaction
+2025-11-25,FP-0091,Sale,Consulting,Advisory,Services,North,134198.86,80667.66,33549.72,60,2683.98,0,Fictional sample transaction
+2025-11-14,FP-0092,Sale,Services,Support Plan,Customer Success,South,132800.76,71275.03,33200.19,23,2656.02,0,Fictional sample transaction
+2025-12-17,FP-0093,Sale,Software,Core Suite,Product,North,134324.42,94777.98,33581.11,65,2686.49,0,Fictional sample transaction
+2025-12-02,FP-0094,Sale,Software,Insight Pro,Product,South,138672.62,74081.21,34668.15,49,2773.45,0,Fictional sample transaction
+2025-12-04,FP-0095,Sale,Consulting,Advisory,Services,North,137550.42,70598.48,34387.6,86,2751.01,5000,Fictional sample transaction
+2025-12-18,FP-0096,Sale,Services,Support Plan,Customer Success,South,137564.74,83750.6,34391.19,27,2751.29,0,Fictional sample transaction
+2026-01-07,FP-0097,Sale,Software,Core Suite,Product,North,145946.95,88628.5,36486.74,98,2918.94,0,Fictional sample transaction
+2026-01-17,FP-0098,Sale,Software,Insight Pro,Product,South,133356.28,79456.74,33339.07,71,2667.13,0,Fictional sample transaction
+2026-01-21,FP-0099,Sale,Consulting,Advisory,Services,North,134970.46,77444.79,33742.61,62,2699.41,0,Fictional sample transaction
+2026-01-22,FP-0100,Sale,Services,Support Plan,Customer Success,South,138973.06,92874.24,34743.27,57,2779.46,5000,Fictional sample transaction
+2026-02-07,FP-0101,Sale,Software,Core Suite,Product,North,137868.35,81423.77,34467.09,41,2757.37,0,Fictional sample transaction
+2026-02-05,FP-0102,Sale,Software,Insight Pro,Product,South,136652.77,64854.95,34163.19,53,2733.06,0,Fictional sample transaction
+2026-02-14,FP-0103,Sale,Consulting,Advisory,Services,North,155546.15,75901.59,38886.54,49,3110.92,0,Fictional sample transaction
+2026-02-06,FP-0104,Sale,Services,Support Plan,Customer Success,South,137043.27,78980.85,34260.82,74,2740.87,0,Fictional sample transaction
+2026-03-18,FP-0105,Sale,Software,Core Suite,Product,North,139389.89,91718.92,34847.47,93,2787.8,5000,Fictional sample transaction
+2026-03-13,FP-0106,Sale,Software,Insight Pro,Product,South,157990.8,102795.88,39497.7,62,3159.82,0,Fictional sample transaction
+2026-03-06,FP-0107,Sale,Consulting,Advisory,Services,North,158095.41,95859.51,39523.85,84,3161.91,0,Fictional sample transaction
+2026-03-03,FP-0108,Sale,Services,Support Plan,Customer Success,South,139730.86,81601.81,34932.72,43,2794.62,0,Fictional sample transaction
+2026-04-16,FP-0109,Sale,Software,Core Suite,Product,North,153706.26,78282.87,38426.56,75,3074.13,0,Fictional sample transaction
+2026-04-17,FP-0110,Sale,Software,Insight Pro,Product,South,143084.14,93044.01,35771.04,27,2861.68,5000,Fictional sample transaction
+2026-04-14,FP-0111,Sale,Consulting,Advisory,Services,North,161185.82,100555.2,40296.45,94,3223.72,0,Fictional sample transaction
+2026-04-06,FP-0112,Sale,Services,Support Plan,Customer Success,South,144197.42,73494.48,36049.36,84,2883.95,0,Fictional sample transaction
+2026-05-25,FP-0113,Sale,Software,Core Suite,Product,North,160801.06,99415.58,40200.26,83,3216.02,0,Fictional sample transaction
+2026-05-19,FP-0114,Sale,Software,Insight Pro,Product,South,138076.54,80355.98,34519.14,67,2761.53,0,Fictional sample transaction
+2026-05-05,FP-0115,Sale,Consulting,Advisory,Services,North,141159.74,84515.24,35289.93,65,2823.19,5000,Fictional sample transaction
+2026-05-18,FP-0116,Sale,Services,Support Plan,Customer Success,South,152678.85,67563.85,38169.71,61,3053.58,0,Fictional sample transaction
+2026-06-14,FP-0117,Sale,Software,Core Suite,Product,North,150248.3,90875.19,37562.08,59,3004.97,0,Fictional sample transaction
+2026-06-22,FP-0118,Sale,Software,Insight Pro,Product,South,131030.86,71350.73,32757.71,29,2620.62,0,Fictional sample transaction
+2026-06-13,FP-0119,Sale,Consulting,Advisory,Services,North,135365.65,90499.65,33841.41,72,2707.31,0,Fictional sample transaction
+2026-06-06,FP-0120,Sale,Services,Support Plan,Customer Success,South,157219.26,85801.37,39304.81,73,3144.39,5000,Fictional sample transaction

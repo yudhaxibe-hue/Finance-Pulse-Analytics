@@ -1,0 +1,243 @@
+{% from '_icons.html' import brand_mark, icon %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ app_title }}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/portal.css') }}">
+  <script defer src="{{ url_for('static', filename='js/ui.js') }}"></script>
+</head>
+<body class="landing">
+  <header class="landing-head">
+    <div class="landing-head-inner">
+      <a class="brand" href="{{ url_for('landing') }}">
+        {{ brand_mark(28) }}
+        <span>{{ app_name }}</span>
+      </a>
+      <nav class="landing-nav" aria-label="Primary navigation">
+        <a href="#capabilities">Capabilities</a>
+        <a href="#portals">Portals</a>
+        <a href="{{ url_for('sample') }}" download="finance_pulse_sample.csv">Sample CSV</a>
+      </nav>
+      <div class="landing-head-actions">
+        <a href="{{ url_for('user_login') }}" class="button secondary pill">Sign in</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="landing-main">
+    <section class="hero-section">
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <h1>Financial clarity, computed locally.</h1>
+          <p class="hero-subtitle">{{ app_title }}</p>
+          <p class="hero-lead">Upload CSV, Excel, or JSON datasets, evaluate profitability across segments, detect outliers, and run target-margin &amp; what-if modeling inside private local workspaces.</p>
+          <div class="hero-actions">
+            <a class="button pill" href="{{ url_for('register') }}">Create account</a>
+            <a class="hero-sample-link" href="{{ url_for('sample') }}" download="finance_pulse_sample.csv">
+              {{ icon('download', 15) }}
+              <span>Download sample CSV</span>
+            </a>
+          </div>
+        </div>
+
+        <section class="showcase-window" aria-label="Interactive workspace preview">
+          <div class="window-chrome">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div class="window-dots" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+              <span class="window-title">Sample Workspace · finance_pulse_sample.csv</span>
+            </div>
+            <div class="segmented" role="tablist" aria-label="Preview view" data-segmented>
+              <span class="segmented-thumb" aria-hidden="true"></span>
+              <button type="button" class="segmented-btn" role="tab" aria-selected="true" data-tab="pulse">Monthly pulse</button>
+              <button type="button" class="segmented-btn" role="tab" aria-selected="false" data-tab="segments">Profitability</button>
+              <button type="button" class="segmented-btn" role="tab" aria-selected="false" data-tab="forecast">Forecast</button>
+            </div>
+          </div>
+
+          <div class="showcase-body">
+            <div class="showcase-panel" data-showcase-panel="pulse">
+              <div class="showcase-summary">
+                <div class="showcase-stat">
+                  <span>Total revenue</span>
+                  <strong class="num">13,759,860.53</strong>
+                </div>
+                <div class="showcase-stat">
+                  <span>Total expenses</span>
+                  <strong class="num">7,998,636.21</strong>
+                </div>
+                <div class="showcase-stat">
+                  <span>Net profit</span>
+                  <strong class="num positive">5,761,224.32</strong>
+                </div>
+                <div class="showcase-stat">
+                  <span>Profit margin</span>
+                  <strong class="num positive">41.87%</strong>
+                </div>
+              </div>
+              <div class="showcase-canvas-wrap" data-canvas-wrap>
+                <div class="canvas-skeleton" aria-hidden="true">
+                  <span></span><span></span><span></span><span></span>
+                </div>
+                <canvas id="sampleCanvas" aria-label="Eight-month sample revenue, expense, and profit chart"></canvas>
+                <div class="showcase-scrubber num" data-sample-scrubber>2026-06 · Rev 573,864 · Profit 235,337</div>
+              </div>
+              <div class="showcase-foot">
+                <span>Bundled synthetic 30-month sample dataset (120 transactions)</span>
+                <span>Hover chart points to inspect period totals</span>
+              </div>
+            </div>
+
+            <div class="showcase-panel" data-showcase-panel="segments" hidden>
+              <div class="margin-bars">
+                <div class="margin-row">
+                  <span>Insight Pro</span>
+                  <div class="margin-track"><div class="margin-fill" style="width: 42.83%;"></div></div>
+                  <strong class="num" style="text-align:right;">42.83%</strong>
+                </div>
+                <div class="margin-row">
+                  <span>Support Plan</span>
+                  <div class="margin-track"><div class="margin-fill" style="width: 42.82%;"></div></div>
+                  <strong class="num" style="text-align:right;">42.82%</strong>
+                </div>
+                <div class="margin-row">
+                  <span>Core Suite</span>
+                  <div class="margin-track"><div class="margin-fill" style="width: 41.69%;"></div></div>
+                  <strong class="num" style="text-align:right;">41.69%</strong>
+                </div>
+                <div class="margin-row">
+                  <span>Advisory</span>
+                  <div class="margin-track"><div class="margin-fill" style="width: 40.15%;"></div></div>
+                  <strong class="num" style="text-align:right;">40.15%</strong>
+                </div>
+              </div>
+              <div class="anomaly-callout">
+                <span><strong>Flagged IQR anomaly:</strong> 2025-09-14 · Consulting expense <span class="num">121,418.51</span> exceeded threshold (<span class="num">113,292</span>).</span>
+                <span class="badge warning">1.5× IQR check</span>
+              </div>
+            </div>
+
+            <div class="showcase-panel" data-showcase-panel="forecast" hidden>
+              <div class="showcase-summary">
+                <div class="showcase-stat">
+                  <span>Model</span>
+                  <strong>Linear trend</strong>
+                </div>
+                <div class="showcase-stat">
+                  <span>Historical MAE</span>
+                  <strong class="num">14,305.02</strong>
+                </div>
+                <div class="showcase-stat">
+                  <span>Historical RMSE</span>
+                  <strong class="num">18,538.71</strong>
+                </div>
+                <div class="showcase-stat">
+                  <span>MAPE</span>
+                  <strong class="num">3.15%</strong>
+                </div>
+              </div>
+              <div class="capability-proof">
+                <div class="proof-line"><span class="proof-key">2026-07 Projected revenue</span><span class="proof-val num">613,064.28</span></div>
+                <div class="proof-line"><span class="proof-key">2026-08 Projected revenue</span><span class="proof-val num">623,025.72</span></div>
+                <div class="proof-line"><span class="proof-key">2026-09 Projected revenue</span><span class="proof-val num">632,987.16</span></div>
+                <div class="proof-line"><span class="proof-key">2026-10 Projected revenue</span><span class="proof-val num">642,948.59</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="capabilities" class="band">
+      <div class="band-head">
+        <h2>Built around explainable calculations.</h2>
+        <p>Every metric, outlier flag, and projection traces directly back to your imported ledger without external cloud calls.</p>
+      </div>
+      <div class="capability-list">
+        <article class="capability-row">
+          <div class="capability-copy">
+            <h3>Automatic schema detection and review before commit</h3>
+            <p>Upload CSV, Excel workbooks, or JSON exports up to 16 MB. {{ app_name }} detects common column aliases such as Sales Date or Sales, flags invalid dates or duplicate IDs, and stages a full preview before saving.</p>
+          </div>
+          <div class="capability-proof">
+            <div class="proof-line"><span class="proof-key">Required fields</span><span class="proof-val">Date, Revenue, Expense</span></div>
+            <div class="proof-line"><span class="proof-key">Optional dimensions</span><span class="proof-val">Product, Department, Category, Region</span></div>
+            <div class="proof-line"><span class="proof-key">Staging verification</span><span class="proof-val">8-row preview + quality report</span></div>
+          </div>
+        </article>
+
+        <article class="capability-row">
+          <div class="capability-copy">
+            <h3>Dimensional margins and IQR anomaly flags</h3>
+            <p>Slice revenue, expenses, COGS, profit, and margin across products, departments, categories, and regions, or isolate transactions exceeding configurable interquartile-range thresholds.</p>
+          </div>
+          <div class="capability-proof">
+            <div class="proof-line"><span class="proof-key">Core metrics</span><span class="proof-val">Revenue, Profit, Margin %, ROI</span></div>
+            <div class="proof-line"><span class="proof-key">Outlier rule</span><span class="proof-val">Explainable Q3 + k × IQR cutoff</span></div>
+            <div class="proof-line"><span class="proof-key">Scope control</span><span class="proof-val">Filter any report by date range</span></div>
+          </div>
+        </article>
+
+        <article class="capability-row">
+          <div class="capability-copy">
+            <h3>Linear regression forecasts, what-if modeling, and exports</h3>
+            <p>Project revenue, expense, or profit from 3 to 24 months with historical error metrics, test margin sensitivity scenarios in SQLite history, and download CSV tables or formatted PDF summaries.</p>
+          </div>
+          <div class="capability-proof">
+            <div class="proof-line"><span class="proof-key">Backtesting metrics</span><span class="proof-val">MAE, RMSE, and MAPE</span></div>
+            <div class="proof-line"><span class="proof-key">Scenario history</span><span class="proof-val">Persisted assumptions &amp; profit delta</span></div>
+            <div class="proof-line"><span class="proof-key">Local deliverables</span><span class="proof-val">CSV ledger &amp; ReportLab PDF summary</span></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="portals" class="portals-band">
+      <div class="band">
+        <div class="band-head">
+          <h2>Separate portals for workspaces and oversight.</h2>
+          <p>Each user receives an isolated SQLite workspace. System administrators manage accounts, imports, and thresholds from a dedicated console.</p>
+        </div>
+        <div class="portal-cards">
+          <article class="portal-panel primary">
+            <div>
+              <h3>Analyze your business performance</h3>
+              <p>Upload your financial data and analyze revenue, expenses, profitability, anomalies, trends, and what-if forecasts inside your own private SQLite workspace.</p>
+            </div>
+            <div class="portal-actions">
+              <a class="hero-sample-link" href="#capabilities">
+                <span>Review workspace capabilities</span>
+              </a>
+            </div>
+          </article>
+
+          <article class="portal-panel">
+            <div>
+              <h3>Manage {{ app_name }}</h3>
+              <p>Administrative portal to provision administrator accounts, govern user access, inspect dataset health and audit logs, and tune global thresholds.</p>
+            </div>
+            <div class="portal-actions">
+              <a class="button secondary pill" href="{{ url_for('admin_login') }}">Admin login</a>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="landing-footer">
+    <span>{{ app_title }} · Runs locally with Flask, SQLite, Pandas, NumPy, ReportLab, and Chart.js.</span>
+    <div class="footer-links">
+      <a href="#capabilities">Capabilities</a>
+      <a href="#portals">Portals</a>
+      <a href="{{ url_for('sample') }}" download="finance_pulse_sample.csv">Sample dataset</a>
+      <a href="{{ url_for('admin_login') }}">Admin login</a>
+    </div>
+  </footer>
+</body>
+</html>

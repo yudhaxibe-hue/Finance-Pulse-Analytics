@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import icon %}
+{% block page_title %}Import &amp; My Data{% endblock %}
+{% block title %}Import data{% endblock %}
+{% block content %}
+  <section class="two">
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Upload financial data</h2>
+          <p>CSV, Excel (XLSX), and JSON are supported. Required fields are Date, Revenue, and Expense; common aliases like Sales Date and Sales are mapped automatically.</p>
+        </div>
+      </div>
+
+      <form method="post" enctype="multipart/form-data" class="stack">
+        <label class="dropzone" data-dropzone>
+          <input type="file" name="file" accept=".csv,.xlsx,.json" required>
+          <span class="dropzone-icon">{{ icon('upload', 20) }}</span>
+          <span class="dropzone-title">Drop a dataset here, or browse files</span>
+          <span class="dropzone-sub">Accepts CSV, XLSX, or JSON up to 16 MB</span>
+          <span class="file-selected-name" data-file-badge hidden>
+            {{ icon('check', 13) }}
+            <span data-file-name></span>
+          </span>
+        </label>
+        <button>Validate and import</button>
+      </form>
+      <p class="chart-note">Invalid dates and negative revenue or expense entries are excluded during normalization. Earlier workspace imports remain intact.</p>
+    </article>
+
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Try the sample</h2>
+          <p>Download the bundled 30-month synthetic dataset to evaluate profitability views, IQR anomaly detection, and forecasting before importing your own books.</p>
+        </div>
+      </div>
+      <ul class="spec-list">
+        <li>{{ icon('check', 16) }}<span>120 transactions spanning 2024-01 through 2026-06</span></li>
+        <li>{{ icon('check', 16) }}<span>4 products across Software &amp; Consulting categories</span></li>
+        <li>{{ icon('check', 16) }}<span>Includes an intentional Advisory expense anomaly</span></li>
+      </ul>
+      <a class="button secondary pill" href="{{ url_for('sample') }}" download="finance_pulse_sample.csv">
+        {{ icon('download', 15) }}<span>Download sample CSV</span>
+      </a>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Dataset history</h2>
+        <p>Audit log of files imported into your private workspace.</p>
+      </div>
+    </div>
+    {% if imports %}
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Imported</th>
+              <th class="num">Rows</th>
+              <th class="num">Excluded</th>
+              <th>Data quality</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in imports %}
+              <tr>
+                <td>{{ item.filename }}</td>
+                <td class="tabular">{{ item.imported_at[:19].replace('T', ' ') }}</td>
+                <td class="num">{{ item.row_count }}</td>
+                <td class="num">{{ item.excluded_count }}</td>
+                <td>
+                  {% if item.quality %}
+                    <div class="quality-badges">
+                      <span class="badge num">{{ item.quality.get('rows', item.row_count) }} source rows</span>
+                      <span class="badge {{ 'warning' if item.quality.get('invalid_dates', 0) > 0 else 'positive' }} num">{{ item.quality.get('invalid_dates', 0) }} bad dates</span>
+                      <span class="badge {{ 'warning' if item.quality.get('duplicate_ids', 0) > 0 else '' }} num">{{ item.quality.get('duplicate_ids', 0) }} duplicate IDs</span>
+                    </div>
+                  {% else %}—{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No imports yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}

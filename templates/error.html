@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import icon %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+  <section class="empty">
+    <div class="empty-glyph">{{ icon('shield', 22) }}</div>
+    <h2>{{ title }}</h2>
+    <p>{{ message }}</p>
+    <div class="empty-actions">
+      <a class="button pill" href="{{ url_for('landing') }}">Return to {{ app_name }}</a>
+    </div>
+  </section>
+{% endblock %}

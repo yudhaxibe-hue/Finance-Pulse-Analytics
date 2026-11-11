@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import icon %}
+{% from '_intel_brief.html' import render_intel_brief %}
+{% block page_title %}Forecasting{% endblock %}
+{% block title %}Forecasting{% endblock %}
+{% block content %}
+  <div class="toolbar-card">
+    <form class="forecast-controls" method="get">
+      <label>Metric
+        <select name="target">
+          {% for value in ['revenue', 'expense', 'profit'] %}
+            <option value="{{ value }}" {{ 'selected' if target==value }}>{{ value.title() }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Forecast horizon
+        <span class="horizon-field">
+          {% set options = ([3, 6, 9, 12, 18, 24] + ([horizon] if horizon not in [3, 6, 9, 12, 18, 24] else []))|sort %}
+          <select name="horizon">
+            {% for n in options %}
+              <option value="{{ n }}" {{ 'selected' if horizon==n }}>{{ n }}</option>
+            {% endfor %}
+          </select>
+          <span>months</span>
+        </span>
+      </label>
+      <button>Generate forecast</button>
+    </form>
+  </div>
+
+  {% if result.error %}
+    <section class="empty">
+      <div class="empty-glyph">{{ icon('forecasting', 22) }}</div>
+      <h2>Forecast unavailable</h2>
+      <p>{{ result.error }}</p>
+      <a class="button secondary pill" href="{{ url_for('user_data') }}">Import monthly data</a>
+    </section>
+  {% else %}
+    <section class="kpi-strip cols-4" aria-label="Forecast model accuracy">
+      <div class="kpi-cell">
+        <span class="kpi-label">Model used</span>
+        <strong class="kpi-value">{{ result.model }}</strong>
+      </div>
+      {% for label, key in [('MAE', 'mae'), ('RMSE', 'rmse'), ('MAPE', 'mape')] %}
+        <div class="kpi-cell">
+          <span class="kpi-label">{{ label }}</span>
+          <strong class="kpi-value">
+            {% if result.accuracy[key] is none %}N/A{% else %}{{ '{:,.2f}'.format(result.accuracy[key]) if key != 'mape' else result.accuracy[key] }}{{ '%' if key=='mape' else '' }}{% endif %}
+          </strong>
+        </div>
+      {% endfor %}
+    </section>
+
+    {{ render_intel_brief(brief, 'Forecast intelligence brief') }}
+
+    <section class="panel chart-panel">
+      <div class="panel-head">
+        <div>
+          <h2>{{ target.title() }} history and forecast</h2>
+          <p>Solid series reflects observed monthly history; dashed segment projects the next {{ horizon }} months.</p>
+        </div>
+      </div>
+      <div class="chart-box">
+        <canvas id="forecast"></canvas>
+      </div>
+      <p class="chart-note">MAE and RMSE report average historical error in currency units ({{ currency }}); MAPE reports average percentage error. This baseline applies linear trend regression and supports, rather than replaces, financial judgment.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Projected monthly values</h2>
+          <p>Point-in-time linear estimates across the selected {{ horizon }}-month horizon.</p>
+        </div>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Period</th>
+              <th class="num">Projected {{ target }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in result.forecast %}
+              <tr>
+                <td class="tabular">{{ row.period }}</td>
+                <td class="num">{{ '{:,.2f}'.format(row.value) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <script>
+      window.addEventListener('DOMContentLoaded', function () {
+        if (!window.Chart) return;
+        const h = {{ result.history|tojson }}, f = {{ result.forecast|tojson }};
+        const cfg = window.FinancePulseCharts ? window.FinancePulseCharts.defaults() : { responsive: true, maintainAspectRatio: false };
+        const bridge = h.length ? [h[h.length - 1].value] : [];
+        const forecastData = h.length
+          ? [...h.slice(0, -1).map(() => null), ...bridge, ...f.map(x => x.value)]
+          : f.map(x => x.value);
+
+        new Chart(document.getElementById('forecast'), {
+          type: 'line',
+          data: {
+            labels: [...h, ...f].map(x => x.period),
+            datasets: [
+              {
+                label: 'Historical',
+                data: [...h.map(x => x.value), ...f.map(() => null)],
+                borderColor: '#1D1D1F',
+                backgroundColor: 'rgba(29, 29, 31, 0.06)',
+                borderWidth: 2.25,
+                tension: 0.24,
+                fill: true,
+                pointRadius: 3
+              },
+              {
+                label: 'Forecast',
+                data: forecastData,
+                borderColor: '#0066CC',
+                backgroundColor: 'rgba(0, 102, 204, 0.08)',
+                borderWidth: 2.25,
+                borderDash: [6, 4],
+                tension: 0.15,
+                fill: false,
+                pointRadius: 3
+              }
+            ]
+          },
+          options: cfg
+        });
+      });
+    </script>
+  {% endif %}
+{% endblock %}

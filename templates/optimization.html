@@ -1,0 +1,275 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import icon %}
+{% block page_title %}What-if &amp; Optimization{% endblock %}
+{% block title %}Profitability optimization{% endblock %}
+{% block content %}
+  {% if base.revenue is none %}
+    <section class="empty">
+      <div class="empty-glyph">{{ icon('optimization', 22) }}</div>
+      <h2>Data required</h2>
+      <p>Import transactions before creating a profitability scenario.</p>
+      <a class="button pill" href="{{ url_for('user_data') }}">Import data</a>
+    </section>
+  {% else %}
+    {% if plan %}
+      <section class="panel" aria-label="Target-margin solver">
+        <div class="panel-head">
+          <div>
+            <h2>Target-margin &amp; break-even solver</h2>
+            <p>Required expense reduction or revenue uplift to achieve your target margin (configured threshold: {{ '{:.1f}%'.format(margin_threshold) }}).</p>
+          </div>
+          <form method="get" class="target-solver-form">
+            <label>
+              <span>Target margin (%)</span>
+              <input type="number" name="target_margin" step="0.5" min="-50" max="95" value="{{ '{:.1f}'.format(target_margin) }}" class="num">
+            </label>
+            <button type="submit" class="secondary compact">Solve target</button>
+          </form>
+        </div>
+
+        <div class="kpi-strip cols-4 solver-strip">
+          <div class="kpi-cell">
+            <span class="kpi-label">Break-even revenue floor</span>
+            <strong class="kpi-value">{{ '{:,.2f}'.format(plan.breakeven_revenue) }}</strong>
+            <span class="solver-sub num">{{ 'Surplus ' if plan.safety_margin_amount >= 0 else 'Deficit ' }}{{ '{:,.2f}'.format(plan.safety_margin_amount|abs) }}</span>
+          </div>
+          <div class="kpi-cell">
+            <span class="kpi-label">Target profit gap</span>
+            <strong class="kpi-value {{ 'positive' if plan.already_achieved else '' }}">
+              {{ 'On target' if plan.already_achieved else '+' ~ '{:,.2f}'.format(plan.profit_gap) }}
+            </strong>
+            <span class="solver-sub num">Current {{ '{:.2f}%'.format(plan.current_margin) }} → {{ '{:.1f}%'.format(plan.target_margin) }}</span>
+          </div>
+          <div class="kpi-cell">
+            <span class="kpi-label">Expense cut lever</span>
+            <strong class="kpi-value num">{{ '{:.1f}%'.format(plan.expense_cut_pct) }}</strong>
+            <div class="solver-action-row">
+              <span class="solver-sub num">-{{ '{:,.2f}'.format(plan.expense_cut_amount) }}</span>
+              {% if plan.expense_cut_pct < 0 %}
+                <button type="button" class="button secondary compact" data-preset-rev="0" data-preset-exp="{{ plan.expense_cut_pct }}" data-preset-name="Target {{ '{:.1f}%'.format(plan.target_margin) }} via cost cut">Load</button>
+              {% endif %}
+            </div>
+          </div>
+          <div class="kpi-cell">
+            <span class="kpi-label">Revenue lift lever</span>
+            <strong class="kpi-value num">{{ '+{:.1f}%'.format(plan.revenue_lift_pct) }}</strong>
+            <div class="solver-action-row">
+              <span class="solver-sub num">+{{ '{:,.2f}'.format(plan.revenue_lift_amount) }}</span>
+              {% if plan.revenue_lift_pct > 0 %}
+                <button type="button" class="button secondary compact" data-preset-rev="{{ plan.revenue_lift_pct }}" data-preset-exp="0" data-preset-name="Target {{ '{:.1f}%'.format(plan.target_margin) }} via growth">Load</button>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="two">
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>What-if scenario</h2>
+            <p>Adjust assumptions against your current baseline. A negative expense change lowers spending.</p>
+          </div>
+        </div>
+        <form
+          method="post"
+          class="stack"
+          data-optimization-form
+          data-base-revenue="{{ base.revenue }}"
+          data-base-expense="{{ base.expenses }}"
+          data-base-profit="{{ base.profit }}"
+          data-currency="{{ currency }}"
+        >
+          <label>Scenario name
+            <input name="name" placeholder="e.g. Cost reduction plan">
+          </label>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="rev-change">Revenue change (%)</label>
+            </div>
+            <div class="slider-row">
+              <input type="range" min="-50" max="100" step="0.5" value="0" data-range-for="revenue_change" aria-label="Revenue change slider">
+              <input id="rev-change" type="number" name="revenue_change" value="0" step="0.1" class="num">
+            </div>
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="exp-change">Expense change (%)</label>
+            </div>
+            <div class="slider-row">
+              <input type="range" min="-50" max="100" step="0.5" value="0" data-range-for="expense_change" aria-label="Expense change slider">
+              <input id="exp-change" type="number" name="expense_change" value="0" step="0.1" class="num">
+            </div>
+          </div>
+
+          <div class="live-preview-box" aria-live="polite">
+            <div class="live-preview-title">
+              <span>Live estimate</span>
+              <span class="badge positive num" data-live-delta>+0.00 vs baseline</span>
+            </div>
+            <div class="live-preview-grid">
+              <div class="live-stat">
+                <span>Projected revenue</span>
+                <strong class="num" data-live-rev>{{ '{:,.2f}'.format(base.revenue) }}</strong>
+              </div>
+              <div class="live-stat">
+                <span>Projected expenses</span>
+                <strong class="num" data-live-exp>{{ '{:,.2f}'.format(base.expenses) }}</strong>
+              </div>
+              <div class="live-stat">
+                <span>Projected profit</span>
+                <strong class="num" data-live-profit>{{ '{:,.2f}'.format(base.profit) }}</strong>
+              </div>
+              <div class="live-stat">
+                <span>Projected margin</span>
+                <strong class="num" data-live-margin>{{ (base.margin|string ~ '%') if base.margin is not none else 'N/A' }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <button>Calculate scenario</button>
+        </form>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Baseline</h2>
+            <p>Actual consolidated performance across your active workspace transactions.</p>
+          </div>
+        </div>
+        <dl>
+          <dt>Revenue</dt><dd>{{ '{:,.2f}'.format(base.revenue) }}</dd>
+          <dt>Expenses</dt><dd>{{ '{:,.2f}'.format(base.expenses) }}</dd>
+          <dt>Gross profit</dt><dd>{{ '{:,.2f}'.format(base.gross_profit) }}</dd>
+          <dt>Net profit</dt><dd>{{ '{:,.2f}'.format(base.profit) }}</dd>
+          <dt>Margin</dt><dd>{{ (base.margin|string ~ '%') if base.margin is not none else 'N/A' }}</dd>
+          <dt>Expense ratio</dt><dd>{{ (base.expense_ratio|string ~ '%') if base.expense_ratio is not none else 'N/A' }}</dd>
+        </dl>
+      </article>
+    </section>
+
+    {% if result %}
+      <section class="kpi-strip cols-4" aria-label="Saved scenario result">
+        <div class="kpi-cell">
+          <span class="kpi-label">Projected revenue</span>
+          <strong class="kpi-value">{{ '{:,.2f}'.format(result.revenue) }}</strong>
+        </div>
+        <div class="kpi-cell">
+          <span class="kpi-label">Projected expenses</span>
+          <strong class="kpi-value">{{ '{:,.2f}'.format(result.expenses) }}</strong>
+        </div>
+        <div class="kpi-cell">
+          <span class="kpi-label">Projected profit</span>
+          <strong class="kpi-value {{ 'positive' if result.profit >= 0 else 'negative' }}">{{ '{:,.2f}'.format(result.profit) }}</strong>
+        </div>
+        <div class="kpi-cell">
+          <span class="kpi-label">Projected margin</span>
+          <strong class="kpi-value {{ 'positive' if result.margin is not none and result.margin >= 0 else 'negative' if result.margin is not none else '' }}">
+            {% if result.margin is none %}N/A{% else %}{{ '{:.2f}'.format(result.margin) }}%{% endif %}
+          </strong>
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Measurable opportunities</h2>
+          <p>Rule-based flags evaluated against workspace margin and expense thresholds.</p>
+        </div>
+      </div>
+      {% if recommendations %}
+        <ul class="insights">
+          {% for rec in recommendations %}
+            <li>
+              <span class="insight-dot" aria-hidden="true"></span>
+              <span><strong>{{ rec.title }}:</strong> {{ rec.detail }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No condition currently meets the configured recommendation thresholds.</p>
+      {% endif %}
+    </section>
+
+    {% if opportunities %}
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Segment profit levers</h2>
+            <p>Highest-impact profitability opportunities ranked across products, departments, categories, and regions.</p>
+          </div>
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Dimension</th>
+                <th>Segment</th>
+                <th class="num">Revenue</th>
+                <th class="num">Net profit</th>
+                <th class="num">Margin</th>
+                <th>Recommended lever</th>
+                <th class="num">Profit potential</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for opp in opportunities %}
+                <tr>
+                  <td><span class="badge">{{ opp.dimension }}</span></td>
+                  <td><strong>{{ opp.segment }}</strong></td>
+                  <td class="num">{{ '{:,.2f}'.format(opp.revenue) }}</td>
+                  <td class="num {{ 'pos' if opp.profit >= 0 else 'neg' }}">{{ '{:,.2f}'.format(opp.profit) }}</td>
+                  <td class="num">{% if opp.margin is none %}—{% else %}{{ '{:.2f}%'.format(opp.margin) }}{% endif %}</td>
+                  <td>{{ opp.opportunity }}</td>
+                  <td class="num pos">+{{ '{:,.2f}'.format(opp.impact) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    {% endif %}
+
+    {% if saved %}
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Saved scenarios</h2>
+            <p>Recent what-if assumptions persisted to your private workspace.</p>
+          </div>
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Scenario</th>
+                <th class="num">Revenue Δ</th>
+                <th class="num">Expense Δ</th>
+                <th class="num">Projected profit</th>
+                <th class="num">Projected margin</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in saved %}
+                <tr>
+                  <td>{{ item.name }}</td>
+                  <td class="num {{ 'pos' if item.assumptions.revenue_change >= 0 else 'neg' }}">{{ '{:+.1f}%'.format(item.assumptions.revenue_change) }}</td>
+                  <td class="num {{ 'pos' if item.assumptions.expense_change <= 0 else 'neg' }}">{{ '{:+.1f}%'.format(item.assumptions.expense_change) }}</td>
+                  <td class="num {{ 'pos' if item.result.profit >= 0 else 'neg' }}">{{ '{:,.2f}'.format(item.result.profit) }}</td>
+                  <td class="num">{% if item.result.margin is none %}N/A{% else %}{{ '{:.2f}%'.format(item.result.margin) }}{% endif %}</td>
+                  <td class="tabular">{{ item.created_at[:19].replace('T', ' ') }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    {% endif %}
+  {% endif %}
+{% endblock %}
