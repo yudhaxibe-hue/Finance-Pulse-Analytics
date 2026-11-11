@@ -10,8 +10,8 @@ android {
         applicationId = "com.financepulse.analytics"
         minSdk = 26
         targetSdk = 34
-        val propVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 2
-        val propVersionName = (project.findProperty("versionName") as String?) ?: "1.1.0"
+        val propVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 16
+        val propVersionName = (project.findProperty("versionName") as String?) ?: "1.2.0"
         versionCode = propVersionCode
         versionName = propVersionName
 

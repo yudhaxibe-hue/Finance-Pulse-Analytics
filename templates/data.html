@@ -8,7 +8,7 @@
       <div class="panel-head">
         <div>
           <h2>Upload financial data</h2>
-          <p>CSV, Excel (XLSX), and JSON are supported. Required fields are Date, Revenue, and Expense; common aliases like Sales Date and Sales are mapped automatically.</p>
+          <p>CSV, Excel (XLSX), and JSON ledgers (including dual Revenue/Expense, single Amount + Type, and Bank Credit/Debit statements) are mapped automatically.</p>
         </div>
       </div>
 
@@ -17,7 +17,7 @@
           <input type="file" name="file" accept=".csv,.xlsx,.json" required>
           <span class="dropzone-icon">{{ icon('upload', 20) }}</span>
           <span class="dropzone-title">Drop a dataset here, or browse files</span>
-          <span class="dropzone-sub">Accepts CSV, XLSX, or JSON up to 16 MB</span>
+          <span class="dropzone-sub">Accepts CSV, XLSX, or JSON up to 32 MB</span>
           <span class="file-selected-name" data-file-badge hidden>
             {{ icon('check', 13) }}
             <span data-file-name></span>
@@ -25,24 +25,145 @@
         </label>
         <button>Validate and import</button>
       </form>
-      <p class="chart-note">Invalid dates and negative revenue or expense entries are excluded during normalization. Earlier workspace imports remain intact.</p>
+      <p class="chart-note">All imported records are stored locally in SQLite WAL and automatically risk-scored offline by Random Forest + Isolation Forest.</p>
     </article>
 
     <article class="panel">
       <div class="panel-head">
         <div>
-          <h2>Try the sample</h2>
-          <p>Download the bundled 30-month synthetic dataset to evaluate profitability views, IQR anomaly detection, and forecasting before importing your own books.</p>
+          <h2>Enterprise benchmark &amp; BI exports</h2>
+          <p>Load the 10,000-record &times; 26-field dataset directly into your workspace or export pre-configured Power BI and chart packs.</p>
         </div>
       </div>
       <ul class="spec-list">
-        <li>{{ icon('check', 16) }}<span>120 transactions spanning 2024-01 through 2026-06</span></li>
-        <li>{{ icon('check', 16) }}<span>4 products across Software &amp; Consulting categories</span></li>
-        <li>{{ icon('check', 16) }}<span>Includes an intentional Advisory expense anomaly</span></li>
+        <li>{{ icon('check', 16) }}<span>10,000 enterprise transactions spanning 26 schema columns</span></li>
+        <li>{{ icon('check', 16) }}<span>Real-world institutional audit, GST/tax, vendor, &amp; channel ready</span></li>
+        <li>{{ icon('check', 16) }}<span>Power BI Ready Kit (26-col CSV, Power Query M, DAX measures)</span></li>
       </ul>
-      <a class="button secondary pill" href="{{ url_for('sample') }}" download="finance_pulse_sample.csv">
-        {{ icon('download', 15) }}<span>Download sample CSV</span>
-      </a>
+      <div class="data-actions-row">
+        <form method="post" action="{{ url_for('user_load_enterprise_sample') }}" class="inline-action">
+          <button type="submit" class="pill">{{ icon('sparkles', 15) }}<span>Load 10,000-row sample</span></button>
+        </form>
+        <a class="button secondary pill" href="{{ url_for('sample') }}" download="finance_pulse_sample.csv">
+          {{ icon('download', 15) }}<span>120-row CSV</span>
+        </a>
+        <a class="button secondary pill" href="{{ url_for('user_powerbi_kit') }}" download="finance_pulse_powerbi_kit.zip">
+          {{ icon('download', 15) }}<span>Power BI Kit</span>
+        </a>
+        <a class="button secondary pill" href="{{ url_for('user_charts_pack') }}" download="finance_pulse_charts.zip">
+          {{ icon('download', 15) }}<span>Charts Pack</span>
+        </a>
+      </div>
+    </article>
+  </section>
+
+  <section class="two">
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Quick manual entry</h2>
+          <p>Log an individual salary credit, invoice, or expense directly into SQLite. Leave Category blank for offline Random Forest auto-classification.</p>
+        </div>
+      </div>
+      <form method="post" action="{{ url_for('user_transaction') }}" class="formgrid compact-formgrid">
+        <label>Date
+          <input type="date" name="date" value="{{ today }}" required>
+        </label>
+        <label>Type
+          <select name="transaction_type">
+            <option value="Expense">Expense</option>
+            <option value="Sale">Income / Sale</option>
+            <option value="Salary Credit">Salary Credit</option>
+            <option value="Operating Expense">Operating Expense</option>
+          </select>
+        </label>
+        <label>Revenue ({{ currency }})
+          <input type="number" name="revenue" step="0.01" min="0" value="0" class="num">
+        </label>
+        <label>Expense ({{ currency }})
+          <input type="number" name="expense" step="0.01" min="0" value="0" class="num">
+        </label>
+        <label>Item / Payee
+          <input type="text" name="product" placeholder="e.g. Cloud Server or Rent">
+        </label>
+        <label>Category (optional)
+          <input type="text" name="category" placeholder="Auto-predicted by RF if empty">
+        </label>
+        <label>Department
+          <input type="text" name="department" value="Operations">
+        </label>
+        <label>Payment method
+          <select name="payment_method">
+            <option>UPI / Instant</option>
+            <option>Bank Transfer</option>
+            <option>Corporate Card</option>
+            <option>Cash</option>
+          </select>
+        </label>
+        <label class="full-span">Notes
+          <input type="text" name="notes" placeholder="Optional reference or remarks">
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="secondary">Add entry to ledger</button>
+        </div>
+      </form>
+    </article>
+
+    <article class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Offline receipt &amp; invoice scanner</h2>
+          <p>Extract date, vendor, tax, and total from PNG, JPG, WEBP, or PDF documents 100% locally using Apple Vision / OCR, then confirm before saving.</p>
+        </div>
+      </div>
+      <form method="post" action="{{ url_for('user_receipt_scan') }}" enctype="multipart/form-data" class="stack" id="receiptScanForm">
+        <label class="dropzone compact-dropzone" data-dropzone>
+          <input type="file" name="document" id="receiptFileInput" accept=".png,.jpg,.jpeg,.webp,.pdf" required>
+          <span class="dropzone-icon">{{ icon('audit', 20) }}</span>
+          <span class="dropzone-title">Drop a receipt photo or PDF invoice</span>
+          <span class="dropzone-sub">Offline OCR via Apple Vision / WinRT / Tesseract / pypdf</span>
+          <span class="file-selected-name" data-file-badge hidden>
+            {{ icon('check', 13) }}
+            <span data-file-name></span>
+          </span>
+        </label>
+        <button type="submit" id="btnScanReceipt">Scan document offline</button>
+      </form>
+
+      <div id="receiptConfirmWrap" class="receipt-confirm-wrap" {% if not receipt_preview %}hidden{% endif %}>
+        <div class="receipt-meta-bar">
+          <strong id="receiptEngineLabel">{{ receipt_preview.ocr_engine if receipt_preview else 'Offline OCR' }}</strong>
+          <span class="badge accent" id="receiptConfidenceLabel">
+            {{ ((receipt_preview.confidence * 100)|round|int ~ '% parsed') if receipt_preview else 'Ready to confirm' }}
+          </span>
+        </div>
+        <form method="post" action="{{ url_for('user_receipt_confirm') }}" class="formgrid compact-formgrid" id="receiptConfirmForm">
+          <label>Date
+            <input type="date" name="date" id="rcDate" value="{{ receipt_preview.fields.date if receipt_preview else today }}" required>
+          </label>
+          <label>Vendor / Merchant
+            <input type="text" name="vendor_name" id="rcVendor" value="{{ receipt_preview.fields.vendor_name if receipt_preview else '' }}" required>
+          </label>
+          <label>Expense ({{ currency }})
+            <input type="number" name="expense" id="rcExpense" step="0.01" min="0" value="{{ receipt_preview.fields.expense if receipt_preview else 0 }}" class="num" required>
+          </label>
+          <label>Tax / GST ({{ currency }})
+            <input type="number" name="tax_amount" id="rcTax" step="0.01" min="0" value="{{ receipt_preview.fields.tax_amount if receipt_preview else 0 }}" class="num">
+          </label>
+          <label>Category
+            <input type="text" name="category" id="rcCategory" value="{{ receipt_preview.fields.category if receipt_preview else '' }}" placeholder="Auto-classified by RF if blank">
+          </label>
+          <label>Payment method
+            <input type="text" name="payment_method" id="rcPayment" value="{{ receipt_preview.fields.payment_method if receipt_preview else 'UPI / Card' }}">
+          </label>
+          <input type="hidden" name="transaction_type" value="Expense">
+          <input type="hidden" name="department" value="{{ receipt_preview.fields.department if receipt_preview else 'Operations' }}">
+          <input type="hidden" name="notes" id="rcNotes" value="{{ receipt_preview.fields.notes if receipt_preview else 'Scanned document import' }}">
+          <div class="form-actions">
+            <button type="submit">Confirm &amp; save transaction</button>
+          </div>
+        </form>
+      </div>
     </article>
   </section>
 
@@ -50,7 +171,7 @@
     <div class="panel-head">
       <div>
         <h2>Dataset history</h2>
-        <p>Audit log of files imported into your private workspace.</p>
+        <p>Audit log of files, receipts, and manual entries committed to your private workspace.</p>
       </div>
     </div>
     {% if imports %}

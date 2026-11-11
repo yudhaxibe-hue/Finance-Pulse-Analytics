@@ -7,8 +7,8 @@ from pathlib import Path
 APP_NAME = "Finance Pulse Analytics"
 APP_SUBTITLE = "Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform"
 APP_TITLE = f"{APP_NAME}: {APP_SUBTITLE}"
-APP_VERSION = "1.1.0"
-APP_BUILD = 2
+APP_VERSION = "1.2.0"
+APP_BUILD = 16
 
 BASE_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(sys._MEIPASS) if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS") else BASE_DIR
@@ -59,8 +59,11 @@ def default_data_dir():
 DATA_DIR = default_data_dir()
 DATABASE = DATA_DIR / "finance_pulse.db"
 UPLOAD_FOLDER = DATA_DIR / "data" / "uploads"
-MAX_CONTENT_LENGTH = 16 * 1024 * 1024
+MODELS_DIR = DATA_DIR / "models"
+BACKUPS_DIR = DATA_DIR / "backups"
+MAX_CONTENT_LENGTH = 32 * 1024 * 1024
 ALLOWED_EXTENSIONS = {"csv", "xlsx", "json"}
+ALLOWED_DOCUMENT_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "pdf"}
 
 
 def load_or_create_secret_key(secret_path=None):

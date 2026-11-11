@@ -29,6 +29,11 @@
       <label>Date format
         <input name="date_format" value="{{ settings.date_format }}" required>
       </label>
+      <label class="checkbox-field full-span">
+        <input type="hidden" name="pii_masking_form" value="1">
+        <input type="checkbox" name="pii_masking" value="1" {{ 'checked' if settings.get('pii_masking', '1') != '0' }}>
+        <span>Mask PII (emails, phone numbers, PAN, &amp; card digits) in CSV and Power BI exports</span>
+      </label>
       <div class="form-actions">
         <button>Save settings</button>
       </div>

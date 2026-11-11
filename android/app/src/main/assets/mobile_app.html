@@ -25,9 +25,10 @@
 
     <!-- Signed-in workspace header actions -->
     <div class="bar-actions hidden" id="workspaceActions">
+      <button type="button" class="btn secondary" id="btnMobileCopilot" aria-controls="mobileCopilotModal">Ask AI</button>
       <label class="btn" style="margin:0;">
         Import
-        <input type="file" id="fileInput" accept=".csv,.json,text/csv,application/json" style="display:none;">
+        <input type="file" id="fileInput" accept=".csv,.json,text/csv,text/comma-separated-values,application/csv,application/json,text/plain" style="display:none;">
       </label>
       <button type="button" class="btn secondary" id="btnExportCsv">Export</button>
     </div>
@@ -80,9 +81,9 @@
         </article>
 
         <article class="panel cap-card">
-          <h3>Forecasting &amp; Target-Margin Solver</h3>
-          <p class="cap-copy">Projects 3–18 month trajectories using OLS linear regression with historical MAE, RMSE, and MAPE accuracy plus what-if scenario sliders.</p>
-          <div class="cap-meta">100% On-Device Storage · Zero Cloud Exposure · Private Account Workspaces</div>
+          <h3>Forecasting, Copilot &amp; Solver</h3>
+          <p class="cap-copy">Run trend forecasts with 90% confidence intervals, client risk scoring, cashflow runway checks, and an offline EN / தமிழ் / हिन्दी AI Copilot.</p>
+          <div class="cap-meta">100% On-Device Storage · Zero API Keys · 10k-Row Ready</div>
         </article>
       </div>
     </section>
@@ -132,10 +133,12 @@
         <!-- Clean Empty State (matches Desktop dashboard.html) -->
         <section class="panel empty-state-card" id="overviewEmpty">
           <h2>Welcome to Finance Pulse Analytics</h2>
-          <p class="panel-sub">No financial data has been imported yet. Upload a CSV or JSON ledger to generate profitability KPIs, 3-pillar executive briefs, segment rankings, anomaly alerts, and linear forecasts.</p>
+          <p class="panel-sub">No financial data has been imported yet. Upload a CSV or JSON ledger to generate profitability KPIs, ML risk &amp; runway metrics, 3-pillar briefs, and forecasts.</p>
           <div class="empty-actions">
             <button type="button" class="btn cta-full" id="btnEmptyImport">Upload financial data</button>
-            <button type="button" class="btn secondary cta-full" id="btnEmptyLoadSample">Load 30-month sample dataset</button>
+            <button type="button" class="btn secondary cta-full" id="btnEmptyLoadEnterprise">Load 10,000-row sample</button>
+            <button type="button" class="btn secondary cta-full" id="btnEmptyLoadSample">Load 30-month sample (120 rows)</button>
+            <button type="button" class="btn secondary cta-full" id="btnEmptyQuickEntry">Add manual entry / parse receipt</button>
           </div>
           <div class="hero-links-row" style="margin-top:6px;">
             <button type="button" class="text-link-btn" id="btnEmptyDownloadSample">Download sample CSV file</button>
@@ -144,6 +147,21 @@
 
         <!-- Populated Dashboard Analytics -->
         <div id="overviewPopulated" class="tab-pane hidden">
+          <div class="panel filter-strip-card" id="overviewFilters">
+            <div class="mobile-filter-grid">
+              <label class="field compact-field">Year
+                <select id="filterYear"><option value="">All years</option></select>
+              </label>
+              <label class="field compact-field">Department
+                <select id="filterDepartment"><option value="">All units</option></select>
+              </label>
+            </div>
+            <div class="filter-strip-foot">
+              <button type="button" class="btn secondary btn-compact" id="btnQuickEntryOpen">+ Add entry</button>
+              <button type="button" class="btn quiet btn-compact hidden" id="btnFilterReset">Reset filter</button>
+            </div>
+          </div>
+
           <div class="kpi-ledger" id="overviewKpis"></div>
           <article class="intel-brief" id="overviewBrief"></article>
           <section class="panel">
@@ -159,6 +177,17 @@
               </div>
             </div>
             <div class="chart-box"><canvas id="overviewCanvas"></canvas></div>
+          </section>
+
+          <section class="panel" id="overviewMlPanel">
+            <div class="panel-head account-head">
+              <div>
+                <h2>Risk &amp; cash-flow runway</h2>
+                <p class="panel-sub" id="overviewMlSub">On-device risk scoring and recent cash buffer</p>
+              </div>
+              <button type="button" class="btn secondary btn-compact" id="btnPanelCopilot">Ask AI</button>
+            </div>
+            <div class="kpi-ledger" id="overviewMlKpis"></div>
           </section>
         </div>
       </section>
@@ -264,8 +293,14 @@
                 <h2>Linear trend forecast</h2>
                 <p class="panel-sub" id="forecastMetricsText">Historical OLS projection with error backtesting</p>
               </div>
-              <div style="min-width:130px;">
-                <label class="field">Horizon
+              <div class="forecast-controls-mob">
+                <label class="field compact-field">Engine
+                  <select id="forecastModelMode">
+                    <option value="ensemble" selected>Ensemble ML</option>
+                    <option value="ols">Linear OLS</option>
+                  </select>
+                </label>
+                <label class="field compact-field">Horizon
                   <select id="forecastMonths">
                     <option value="3">3 months</option>
                     <option value="6" selected>6 months</option>
@@ -318,8 +353,10 @@
           </div>
           <div class="bar-actions-wrap account-actions-row">
             <button type="button" class="btn" id="btnSettingsUpload">Upload CSV / JSON</button>
-            <button type="button" class="btn secondary" id="btnLoadSample">Load sample data</button>
-            <button type="button" class="btn secondary" id="btnResetData">Clear workspace data</button>
+            <button type="button" class="btn secondary" id="btnLoadEnterprise">Load 10,000-row sample</button>
+            <button type="button" class="btn secondary" id="btnLoadSample">Load sample (120 rows)</button>
+            <button type="button" class="btn secondary" id="btnSettingsQuickEntry">+ Entry / receipt</button>
+            <button type="button" class="btn secondary" id="btnResetData">Clear data</button>
           </div>
         </section>
 
@@ -353,7 +390,7 @@
               <p class="panel-sub" id="appUpdateSub">Check and install new versions directly in-app</p>
             </div>
           </div>
-          <div class="status-banner" id="appUpdateStatus">Version 1.1.0 · Offline-Ready</div>
+          <div class="status-banner" id="appUpdateStatus">Version 1.2.0 · Offline-Ready</div>
           <div class="bar-actions-wrap" style="margin-top:12px;">
             <button type="button" class="btn secondary" id="btnCheckUpdates">Check for updates</button>
             <button type="button" class="btn hidden" id="btnPerformUpdate">Install update</button>
@@ -363,11 +400,101 @@
         <section class="panel">
           <p class="about-title">Finance Pulse Analytics</p>
           <p class="about-copy">Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform</p>
-          <button type="button" class="about-version-btn" id="aboutSecretTrigger">Engine v1.1.0 · Offline &amp; Auto-Sync Ready</button>
+          <button type="button" class="about-version-btn" id="aboutSecretTrigger">Engine v1.2.0 · Offline &amp; Auto-Sync Ready</button>
         </section>
       </section>
     </div>
   </main>
+
+  <!-- Quick Manual Entry & Offline Receipt Text Parser Modal -->
+  <div class="operator-modal hidden" id="quickEntryModal" role="dialog" aria-modal="true" aria-labelledby="qeModalTitle">
+    <div class="operator-sheet panel modal-scroll-sheet">
+      <div class="panel-head account-head">
+        <div style="min-width:0;">
+          <h2 id="qeModalTitle">Quick entry &amp; receipt parser</h2>
+          <p class="panel-sub">Add a transaction directly or paste SMS/bill text to auto-fill offline</p>
+        </div>
+        <button type="button" class="btn quiet btn-compact" id="btnQeClose" style="flex-shrink:0;">Close</button>
+      </div>
+      <div class="qe-parser-box">
+        <label class="field compact-field">Paste bill / SMS / UPI note (optional)
+          <textarea id="qeReceiptText" rows="2" placeholder="e.g. Paid INR 1,850 to ABC Supplies on 2026-11-10 for Lab Equipment"></textarea>
+        </label>
+        <div class="qe-parser-actions">
+          <button type="button" class="btn secondary btn-compact" id="btnQeParse">Auto-extract fields</button>
+          <span class="panel-sub" id="qeParseNote" style="margin:0;">100% local regex extraction</span>
+        </div>
+      </div>
+      <form id="quickEntryForm" class="auth-form" style="margin-top:10px;">
+        <div class="mobile-filter-grid">
+          <label class="field compact-field">Date
+            <input type="date" id="qeDate" required>
+          </label>
+          <label class="field compact-field">Flow type
+            <select id="qeType">
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+            </select>
+          </label>
+        </div>
+        <div class="mobile-filter-grid">
+          <label class="field compact-field">Amount
+            <input type="number" id="qeAmount" step="0.01" min="0.01" placeholder="1850" required>
+          </label>
+          <label class="field compact-field">Category
+            <input type="text" id="qeCategory" value="Operations" required>
+          </label>
+        </div>
+        <div class="mobile-filter-grid">
+          <label class="field compact-field">Department
+            <input type="text" id="qeDepartment" value="General">
+          </label>
+          <label class="field compact-field">Product / Item
+            <input type="text" id="qeProduct" value="Ledger Entry">
+          </label>
+        </div>
+        <label class="field compact-field">Vendor / Party
+          <input type="text" id="qeVendor" placeholder="Optional merchant or counterparty">
+        </label>
+        <button type="submit" class="btn cta-full">Save transaction to workspace</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Offline AI Financial Copilot Modal Sheet -->
+  <div class="operator-modal copilot-modal-overlay hidden" id="mobileCopilotModal" role="dialog" aria-modal="true" aria-labelledby="mobCopilotTitle">
+    <div class="copilot-sheet panel">
+      <div class="panel-head account-head" style="margin-bottom:8px;">
+        <div style="min-width:0;">
+          <h2 id="mobCopilotTitle">Offline AI Copilot</h2>
+          <p class="panel-sub">On-device ledger intelligence · EN / தமிழ் / हिन्दी</p>
+        </div>
+        <button type="button" class="btn quiet btn-compact" id="btnMobCopilotClose" style="flex-shrink:0;">Close</button>
+      </div>
+      <div class="mode-bar" id="mobCopilotLangBar" aria-label="Response language">
+        <button type="button" class="mode-btn is-active" data-lang="auto">Auto</button>
+        <button type="button" class="mode-btn" data-lang="en">EN</button>
+        <button type="button" class="mode-btn" data-lang="ta">தமிழ்</button>
+        <button type="button" class="mode-btn" data-lang="hi">हिन्दी</button>
+      </div>
+      <div class="mob-copilot-prompts" id="mobCopilotPrompts">
+        <button type="button" class="copilot-chip-mob" data-prompt="Predict next 6 months profit">Predict 6M</button>
+        <button type="button" class="copilot-chip-mob" data-prompt="What is our cashflow runway?">Runway</button>
+        <button type="button" class="copilot-chip-mob" data-prompt="Show risk exposure and anomalies">Risk audit</button>
+        <button type="button" class="copilot-chip-mob" data-prompt="I earn 30k salary, spend 22k, save 8k — what should I do and what is the risk?">30k / 22k salary</button>
+      </div>
+      <div class="mob-copilot-messages" id="mobCopilotMessages" aria-live="polite">
+        <div class="mob-msg mob-msg-bot">
+          <div class="mob-msg-meta">Offline Copilot · On-Device</div>
+          <p>Ask for future forecasts, segment winners, anomaly spikes, cashflow runway, or personal budget advice (e.g. 30k salary / 22k spend) in English, தமிழ், or हिन्दी.</p>
+        </div>
+      </div>
+      <form class="mob-copilot-composer" id="mobCopilotForm">
+        <input type="text" id="mobCopilotInput" placeholder="Ask about forecast, risk, or 30k salary…" autocomplete="off" required>
+        <button type="submit" class="btn btn-compact" id="mobCopilotSend">Ask</button>
+      </form>
+    </div>
+  </div>
 
   <!-- Hidden Owner Fallback Sheet (unlocked via 5 taps on version footer) -->
   <div class="operator-modal hidden" id="hiddenOperatorModal" role="dialog" aria-modal="true" aria-labelledby="opModalTitle">

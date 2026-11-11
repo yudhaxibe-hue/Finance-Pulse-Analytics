@@ -273,7 +273,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     server_thread = FlaskServerThread(flask_module.app, bind_host, port)
     server_thread.start()
 
-    if not wait_for_server(probe_host, port, expected_title=config.APP_TITLE, timeout_sec=15.0):
+    if not wait_for_server(probe_host, port, expected_title=config.APP_TITLE, timeout_sec=25.0):
         logger.error("Health check failed on http://%s:%s/health", probe_host, port)
         server_thread.stop()
         return 1

@@ -614,4 +614,213 @@
   if (btnSaveOp) btnSaveOp.addEventListener("click", () => postOperatorAction("save_override", opUrlInput ? opUrlInput.value : ""));
   if (btnFlushOp) btnFlushOp.addEventListener("click", () => postOperatorAction("flush_now", ""));
   if (btnClearOp) btnClearOp.addEventListener("click", () => postOperatorAction("clear_override", ""));
+
+  // Offline AI Copilot Slide-Over Drawer
+  const cpDrawer = document.getElementById("copilotDrawer");
+  const cpBackdrop = document.querySelector("[data-copilot-backdrop]");
+  const cpCloseBtns = document.querySelectorAll("[data-copilot-close]");
+  const cpOpenBtns = document.querySelectorAll("[data-copilot-open]");
+  const cpMessages = document.getElementById("copilotMessages");
+  const cpForm = document.getElementById("copilotForm");
+  const cpInput = document.getElementById("copilotInput");
+  const cpSendBtn = document.getElementById("copilotSendBtn");
+  const cpLangBar = document.querySelector("[data-copilot-langs]");
+  let cpLanguage = "auto";
+
+  function setCopilotOpen(open) {
+    if (!cpDrawer || !cpBackdrop) return;
+    cpDrawer.classList.toggle("open", open);
+    cpBackdrop.classList.toggle("open", open);
+    cpDrawer.setAttribute("aria-hidden", open ? "false" : "true");
+    cpOpenBtns.forEach((b) => b.setAttribute("aria-expanded", open ? "true" : "false"));
+    if (open && cpInput) setTimeout(() => cpInput.focus(), 120);
+  }
+
+  cpOpenBtns.forEach((btn) => btn.addEventListener("click", () => setCopilotOpen(true)));
+  cpCloseBtns.forEach((btn) => btn.addEventListener("click", () => setCopilotOpen(false)));
+  if (cpBackdrop) cpBackdrop.addEventListener("click", () => setCopilotOpen(false));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && cpDrawer && cpDrawer.classList.contains("open")) {
+      setCopilotOpen(false);
+    }
+  });
+
+  if (cpLangBar) {
+    cpLangBar.querySelectorAll("[data-lang]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        cpLanguage = btn.getAttribute("data-lang") || "auto";
+        cpLangBar.querySelectorAll("[data-lang]").forEach((b) => b.classList.toggle("on", b === btn));
+      });
+    });
+  }
+
+  function appendUserBubble(text) {
+    if (!cpMessages) return;
+    const div = document.createElement("div");
+    div.className = "copilot-bubble copilot-user";
+    div.textContent = text;
+    cpMessages.appendChild(div);
+    cpMessages.scrollTop = cpMessages.scrollHeight;
+  }
+
+  function appendBotReply(data) {
+    if (!cpMessages) return;
+    const card = document.createElement("div");
+    card.className = "copilot-bubble copilot-bot";
+
+    const meta = document.createElement("div");
+    meta.className = "copilot-bubble-meta";
+    meta.textContent = `${data.model || "Offline Copilot"} · ${(data.language || "en").toUpperCase()}`;
+    card.appendChild(meta);
+
+    if (data.title) {
+      const title = document.createElement("div");
+      title.className = "copilot-bubble-title";
+      title.textContent = data.title;
+      card.appendChild(title);
+    }
+
+    const body = document.createElement("p");
+    body.textContent = data.answer || data.error || "No response generated.";
+    card.appendChild(body);
+
+    if (Array.isArray(data.metrics) && data.metrics.length) {
+      const grid = document.createElement("div");
+      grid.className = "copilot-metrics-grid";
+      data.metrics.slice(0, 6).forEach((m) => {
+        const cell = document.createElement("div");
+        cell.className = "copilot-metric-cell";
+        const lbl = document.createElement("span");
+        lbl.textContent = m.label || "";
+        const val = document.createElement("strong");
+        val.textContent = m.value || "";
+        cell.appendChild(lbl);
+        cell.appendChild(val);
+        grid.appendChild(cell);
+      });
+      card.appendChild(grid);
+    }
+
+    if (Array.isArray(data.actions) && data.actions.length) {
+      const list = document.createElement("ul");
+      list.className = "copilot-actions-list";
+      data.actions.forEach((act) => {
+        const li = document.createElement("li");
+        li.textContent = act;
+        list.appendChild(li);
+      });
+      card.appendChild(list);
+    }
+
+    if (Array.isArray(data.suggestions) && data.suggestions.length) {
+      const sugRow = document.createElement("div");
+      sugRow.className = "copilot-followups";
+      data.suggestions.slice(0, 3).forEach((q) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "copilot-chip";
+        btn.textContent = q;
+        btn.addEventListener("click", () => askCopilotQuery(q));
+        sugRow.appendChild(btn);
+      });
+      card.appendChild(sugRow);
+    }
+
+    cpMessages.appendChild(card);
+    cpMessages.scrollTop = cpMessages.scrollHeight;
+  }
+
+  function currentFilterPayload() {
+    const params = new URLSearchParams(window.location.search);
+    const out = {};
+    ["start", "end", "year", "region", "department"].forEach((k) => {
+      const v = params.get(k);
+      if (v) out[k] = v;
+    });
+    return out;
+  }
+
+  async function askCopilotQuery(question) {
+    const q = String(question || "").trim();
+    if (!q) return;
+    appendUserBubble(q);
+    if (cpSendBtn) cpSendBtn.disabled = true;
+    try {
+      const res = await fetch("/api/copilot/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, language: cpLanguage, filters: currentFilterPayload() }),
+      });
+      const data = await res.json();
+      appendBotReply(data);
+    } catch (_err) {
+      appendBotReply({ ok: false, model: "Offline Copilot", answer: "Unable to reach local workspace engine." });
+    } finally {
+      if (cpSendBtn) cpSendBtn.disabled = false;
+    }
+  }
+
+  if (cpForm && cpInput) {
+    cpForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const val = cpInput.value.trim();
+      if (!val) return;
+      cpInput.value = "";
+      askCopilotQuery(val);
+    });
+  }
+
+  document.querySelectorAll("[data-copilot-prompt]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      askCopilotQuery(chip.getAttribute("data-copilot-prompt") || chip.textContent);
+    });
+  });
+
+  // Offline Receipt / Document Scanner AJAX Preview
+  const rcForm = document.getElementById("receiptScanForm");
+  const rcWrap = document.getElementById("receiptConfirmWrap");
+  if (rcForm && rcWrap) {
+    rcForm.addEventListener("submit", async (e) => {
+      const fileEl = document.getElementById("receiptFileInput");
+      if (!fileEl || !fileEl.files || !fileEl.files.length) return;
+      e.preventDefault();
+      const scanBtn = document.getElementById("btnScanReceipt");
+      if (scanBtn) {
+        scanBtn.disabled = true;
+        scanBtn.textContent = "Scanning locally…";
+      }
+      try {
+        const fd = new FormData(rcForm);
+        const res = await fetch(rcForm.action, {
+          method: "POST",
+          headers: { Accept: "application/json", "X-Requested-With": "fetch" },
+          body: fd,
+        });
+        const data = await res.json();
+        if (data && data.fields) {
+          const f = data.fields;
+          const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+          setVal("rcDate", f.date || "");
+          setVal("rcVendor", f.vendor_name || "Scanned Receipt");
+          setVal("rcExpense", f.expense !== undefined ? f.expense : 0);
+          setVal("rcTax", f.tax_amount !== undefined ? f.tax_amount : 0);
+          setVal("rcCategory", f.category || "");
+          setVal("rcPayment", f.payment_method || "UPI / Card");
+          setVal("rcNotes", f.notes || "Scanned document import");
+          const eng = document.getElementById("receiptEngineLabel");
+          const conf = document.getElementById("receiptConfidenceLabel");
+          if (eng) eng.textContent = data.ocr_engine || "Offline OCR";
+          if (conf) conf.textContent = `${Math.round((data.confidence || 0) * 100)}% parsed`;
+          rcWrap.hidden = false;
+        }
+      } catch (_e) {
+        rcForm.submit();
+      } finally {
+        if (scanBtn) {
+          scanBtn.disabled = false;
+          scanBtn.textContent = "Scan document offline";
+        }
+      }
+    });
+  }
 })();

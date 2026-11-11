@@ -5,11 +5,16 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.coverage
+coverage.xml
 
 # Local runtime state & secrets
 .flask_secret
 *.db
+*.db-*
 *.sqlite*
+models/
+backups/
 sync_config.json
 sync_outbox.json
 sync_tokens.json

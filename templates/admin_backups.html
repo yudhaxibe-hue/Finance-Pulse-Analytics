@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import icon %}
+{% block page_title %}Database Backups &amp; Engine Health{% endblock %}
+{% block title %}Database backups &amp; storage{% endblock %}
+{% block content %}
+  <section class="kpi-strip cols-4" aria-label="Storage and ML health">
+    <div class="kpi-cell">
+      <span class="kpi-label">SQLite journal mode</span>
+      <strong class="kpi-value positive">{{ journal_mode|upper }}</strong>
+    </div>
+    <div class="kpi-cell">
+      <span class="kpi-label">ORM tables indexed</span>
+      <strong class="kpi-value num">{{ schema_info.table_count }} tables</strong>
+    </div>
+    <div class="kpi-cell">
+      <span class="kpi-label">ORM ledger rows</span>
+      <strong class="kpi-value num">{{ '{:,}'.format(schema_info.transaction_count) }}</strong>
+    </div>
+    <div class="kpi-cell">
+      <span class="kpi-label">RF Joblib artifact</span>
+      <strong class="kpi-value {{ 'positive' if ml_model_saved else '' }}">{{ 'Persisted' if ml_model_saved else 'On-Demand' }}</strong>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Create hot SQLite backup</h2>
+        <p>Generates an atomic, transaction-consistent database snapshot using SQLite backup APIs and verifies it via PRAGMA quick_check.</p>
+      </div>
+      <form method="post" class="inline-action">
+        <input type="hidden" name="label" value="admin_manual">
+        <button type="submit">{{ icon('shield', 15) }}<span>Create verified snapshot</span></button>
+      </form>
+    </div>
+
+    {% if backups %}
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Snapshot file</th>
+              <th>Created (UTC)</th>
+              <th class="num">Size</th>
+              <th class="num">Download</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in backups %}
+              <tr>
+                <td class="mono">{{ b.filename }}</td>
+                <td class="tabular">{{ b.modified_at[:19].replace('T', ' ') }}</td>
+                <td class="num">{{ '{:,.1f}'.format(b.size_bytes / 1024) }} KB</td>
+                <td class="num">
+                  <a class="button secondary compact" href="{{ url_for('admin_backup_download', filename=b.filename) }}">
+                    {{ icon('download', 13) }}<span>Download</span>
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No backup snapshots created yet. Click "Create verified snapshot" to archive a consistent database copy.</p>
+    {% endif %}
+  </section>
+{% endblock %}

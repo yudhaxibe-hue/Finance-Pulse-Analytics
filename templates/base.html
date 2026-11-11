@@ -45,6 +45,9 @@
           {{ icon('audit', 16) }}<span>Audit logs</span>
         </a>
         <div class="nav-group">Settings</div>
+        <a class="{{ 'on' if active=='admin_backups' else '' }}" href="{{ url_for('admin_backups') }}">
+          {{ icon('shield', 16) }}<span>Database backups</span>
+        </a>
         <a class="{{ 'on' if active=='admin_settings' else '' }}" href="{{ url_for('admin_settings') }}">
           {{ icon('settings', 16) }}<span>System settings</span>
         </a>
@@ -125,6 +128,9 @@
       </div>
       <div class="header-actions">
         {% if portal == 'user' %}
+          <button type="button" class="button secondary" id="btnOpenCopilot" data-copilot-open aria-controls="copilotDrawer" aria-expanded="false">
+            {{ icon('sparkles', 15) }}<span>Ask AI</span>
+          </button>
           <a class="button secondary" href="{{ url_for('user_export') }}" download="finance_pulse_export.csv">
             {{ icon('download', 15) }}<span>Export CSV</span>
           </a>
@@ -164,6 +170,53 @@
       {% block content %}{% endblock %}
     </div>
   </main>
+
+  {% if portal == 'user' %}
+    <div class="copilot-backdrop" data-copilot-backdrop aria-hidden="true"></div>
+    <aside class="copilot-drawer" id="copilotDrawer" aria-label="Offline AI Financial Copilot" aria-hidden="true">
+      <div class="copilot-head">
+        <div>
+          <h2>Offline AI Copilot</h2>
+          <p class="copilot-sub">Random Forest &amp; SQLite · EN / தமிழ் / हिन्दी · Offline</p>
+        </div>
+        <button type="button" class="drawer-close copilot-close" data-copilot-close aria-label="Close AI Copilot">
+          {{ icon('close', 16) }}
+        </button>
+      </div>
+
+      <div class="copilot-lang-row" role="group" aria-label="Copilot response language" data-copilot-langs>
+        <button type="button" class="chart-mode-btn on" data-lang="auto">Auto</button>
+        <button type="button" class="chart-mode-btn" data-lang="en">EN</button>
+        <button type="button" class="chart-mode-btn" data-lang="ta">தமிழ்</button>
+        <button type="button" class="chart-mode-btn" data-lang="hi">हिन्दी</button>
+      </div>
+
+      <div class="copilot-prompts" aria-label="Quick prompts">
+        <button type="button" class="copilot-chip" data-copilot-prompt="Predict next 6 months profit">Predict next 6 months</button>
+        <button type="button" class="copilot-chip" data-copilot-prompt="What is our cashflow runway?">Cashflow runway</button>
+        <button type="button" class="copilot-chip" data-copilot-prompt="Show high-risk transactions and anomalies">ML risk &amp; anomalies</button>
+        <button type="button" class="copilot-chip" data-copilot-prompt="I earn 30k salary, spend 22k, save 8k — what should I do and what is the risk?">30k salary / 22k spend</button>
+      </div>
+
+      <div class="copilot-messages" id="copilotMessages" aria-live="polite">
+        <div class="copilot-bubble copilot-bot">
+          <div class="copilot-bubble-meta">Offline Copilot · SQLite + Random Forest</div>
+          <p>Ask about future revenue predictions, segment profit, anomaly spikes, cash-flow runway, or personal cashflow planning in English, தமிழ், or हिन्दी.</p>
+        </div>
+      </div>
+
+      <form class="copilot-composer" id="copilotForm">
+        <input
+          type="text"
+          id="copilotInput"
+          placeholder="Ask about forecast, risk, or 30k salary plan…"
+          autocomplete="off"
+          required
+        >
+        <button type="submit" id="copilotSendBtn">Ask</button>
+      </form>
+    </aside>
+  {% endif %}
 
   <dialog id="operatorSyncDialog" class="operator-dialog" aria-labelledby="operatorSyncTitle">
     <div class="operator-dialog-head">

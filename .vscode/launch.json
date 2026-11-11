@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Finance Pulse: Desktop App (User)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "app_launcher",
+      "args": ["--browser"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Finance Pulse: Flask Server",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/app.py",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "FLASK_APP": "app.py"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Finance Pulse: Admin Portal (Localhost)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "app_launcher",
+      "args": ["--admin", "--browser"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Finance Pulse: Run Pytest Suite",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-v", "--tb=short"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ]
+}

@@ -225,6 +225,7 @@ def anomalies_narrative(df, flags, threshold=1.5, currency="INR"):
 
     exp_flags = [f for f in flags if f.get("type") == "Expense"]
     rev_flags = [f for f in flags if f.get("type") == "Revenue"]
+    iso_hits = sum(1 for f in flags if "Isolation Forest" in str(f.get("method", "")))
     top = flags[0]
     exp_excess = sum(max(0.0, float(f["value"]) - float(f.get("threshold") or f["value"])) for f in exp_flags)
     rev_excess = sum(max(0.0, float(f["value"]) - float(f.get("threshold") or f["value"])) for f in rev_flags)
@@ -247,19 +248,20 @@ def anomalies_narrative(df, flags, threshold=1.5, currency="INR"):
             f"{_money(norm_prof, currency)} recurring profit ({_pct(norm_margin)} margin) so budgets don't over-extrapolate one-offs."
         )
 
+    iso_note = f" ({iso_hits} confirmed by Isolation Forest)" if iso_hits else ""
     return {
         "pillars": [
             {
                 "step": "01 · What it is",
-                "headline": f"IQR outlier audit across {len(df):,} records",
+                "headline": f"Hybrid IQR + Isolation Forest audit across {len(df):,} records",
                 "detail": (
-                    f"Flags individual transactions exceeding Q3 + {threshold:.1f} × IQR without black-box scoring. "
-                    f"Highlights variance for human review rather than implying fraud."
+                    f"Screens individual transactions exceeding Q3 + {threshold:.1f} × IQR alongside multi-feature "
+                    f"Isolation Forest density & SciPy Z-scores for audit review."
                 ),
             },
             {
                 "step": "02 · What happened",
-                "headline": f"{len(flags)} outlier{'s' if len(flags) != 1 else ''} detected ({len(exp_flags)} expense, {len(rev_flags)} revenue)",
+                "headline": f"{len(flags)} outlier{'s' if len(flags) != 1 else ''} detected ({len(exp_flags)} expense, {len(rev_flags)} revenue){iso_note}",
                 "detail": (
                     f"Largest flag: {top['date']} · {top['entity']} ({top['type']} of {_money(top['value'], currency)}, "
                     f"above cutoff {_money(top.get('threshold'), currency)})."
@@ -282,6 +284,8 @@ def forecast_narrative(result, target, horizon, currency="INR"):
     hist = result["history"]
     fc = result["forecast"]
     acc = result["accuracy"]
+    model_name = result.get("model", "Linear trend regression")
+    is_rf = result.get("model_code") == "random_forest" or "Random Forest" in model_name
     first_v, last_v = hist[0]["value"], hist[-1]["value"]
     end_v = fc[-1]["value"]
     cum_fc = sum(item["value"] for item in fc)
@@ -292,16 +296,24 @@ def forecast_narrative(result, target, horizon, currency="INR"):
     hist_pct_txt = f" ({hist_delta_pct:+.1f}%)" if hist_delta_pct is not None else ""
     fc_pct_txt = f" ({fc_delta_pct:+.1f}%)" if fc_delta_pct is not None else ""
     mape_txt = f", {acc['mape']:.2f}% MAPE" if acc.get("mape") is not None else ""
+    method_headline = (
+        f"{len(hist)}-month Random Forest forecast on {target}"
+        if is_rf else f"{len(hist)}-month linear trend on {target}"
+    )
+    method_detail = (
+        f"Trains an offline 180-tree scikit-learn Random Forest regressor across {hist[0]['period']} to {hist[-1]['period']} "
+        f"using lagged cashflow, 3-month rolling momentum, and seasonality, extending {horizon} months to {fc[-1]['period']}."
+        if is_rf else
+        f"Fits an ordinary least-squares trend across {hist[0]['period']} to {hist[-1]['period']} "
+        f"and extends {horizon} monthly periods forward to {fc[-1]['period']}."
+    )
 
     return {
         "pillars": [
             {
                 "step": "01 · What it is",
-                "headline": f"{len(hist)}-month linear trend on {target}",
-                "detail": (
-                    f"Fits an ordinary least-squares trend across {hist[0]['period']} to {hist[-1]['period']} "
-                    f"and extends {horizon} monthly periods forward to {fc[-1]['period']}."
-                ),
+                "headline": method_headline,
+                "detail": method_detail,
             },
             {
                 "step": "02 · What happened",
@@ -315,10 +327,45 @@ def forecast_narrative(result, target, horizon, currency="INR"):
                 "step": "03 · What could happen",
                 "headline": f"Projects {_money(end_v, currency)} by {fc[-1]['period']}{fc_pct_txt}",
                 "detail": (
-                    f"If the historical linear trajectory continues unchecked, cumulative {horizon}-month projected {target} totals "
-                    f"{_money(cum_fc, currency)} (±{_money(acc['mae'], currency)} typical monthly band)."
+                    f"Projected cumulative {horizon}-month {target} totals "
+                    f"{_money(cum_fc, currency)} (±{_money(acc['mae'], currency)} historical MAE band)."
                 ),
             },
         ],
         "action": {"label": "Simulate deliberate changes", "endpoint": "user_optimization"},
+    }
+
+
+def ml_insights_narrative(ml_summary_data, runway_data, currency="INR"):
+    if not ml_summary_data or not ml_summary_data.get("total"):
+        return None
+    total = ml_summary_data["total"]
+    high_c = ml_summary_data["high_risk"]
+    mod_c = ml_summary_data["moderate_risk"]
+    low_c = ml_summary_data["low_risk"]
+    exposure = ml_summary_data.get("high_risk_exposure", 0.0)
+    top_feat = ml_summary_data["feature_importances"][0]["feature"] if ml_summary_data.get("feature_importances") else "Margin Ratio"
+    runway_status = (runway_data or {}).get("status", "Evaluated")
+    rec_net = (runway_data or {}).get("recent_monthly_net", 0.0)
+    runway_m = (runway_data or {}).get("runway_months")
+    runway_txt = f"{runway_m} months buffer" if runway_m is not None else "self-sustaining positive cashflow"
+    return {
+        "pillars": [
+            {
+                "step": "01 · What it is",
+                "headline": f"Random Forest risk & runway score across {total:,} entries",
+                "detail": f"Classifies ledger entries offline into Low ({low_c:,}), Moderate ({mod_c:,}), and High Risk ({high_c:,}) with 0 external calls.",
+            },
+            {
+                "step": "02 · What happened",
+                "headline": f"{high_c:,} High Risk entries · {runway_status}",
+                "detail": f"Recent monthly net pace is {_money(rec_net, currency)} ({runway_txt}); top RF risk driver is {top_feat}.",
+            },
+            {
+                "step": "03 · What could happen",
+                "headline": f"{_money(exposure, currency)} high-risk spend exposure under watch",
+                "detail": "Inspecting top flagged disbursements before approvals protects liquidity and lifts baseline savings rate.",
+            },
+        ],
+        "action": {"label": "Inspect flagged entries", "endpoint": "user_analytics", "args": {"view": "anomalies"}},
     }

@@ -121,11 +121,7 @@ public class MainActivity extends Activity {
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("*/*");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
-                        "text/csv", "text/comma-separated-values", "application/json",
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        "text/plain"
-                });
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 try {
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST_CODE);
                 } catch (Exception ex) {

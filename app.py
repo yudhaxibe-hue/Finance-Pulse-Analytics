@@ -2,6 +2,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -17,29 +18,37 @@ from flask import (
     render_template,
     request,
     send_file,
-    send_from_directory,
     session,
     url_for,
 )
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 import config
 import updater
 from analytics.anomalies import detect as anomalies
-from analytics.financial_metrics import metrics, monthly, period_growth
+from analytics.copilot import answer_question as ask_copilot
+from analytics.financial_metrics import compute_cashflow_runway, metrics, monthly, period_growth
 from analytics.forecasting import forecast
 from analytics.intelligence import (
     anomalies_narrative,
     dimension_narrative,
     forecast_narrative,
+    ml_insights_narrative,
     overview_narrative,
 )
+from analytics.ml_engine import ml_summary, model_artifact_path
 from analytics.optimization import recommendations, scenario, segment_opportunities, target_margin_plan
+from analytics.powerbi import build_powerbi_feed, build_powerbi_kit_zip
+from analytics.privacy import mask_dataframe_pii, mask_pii_text
 from analytics.profitability import by_dimension
+from analytics.receipt_ocr import extract_document_details
+from analytics.visuals import build_charts_zip, render_monthly_cashflow_png, render_segment_profit_png
 from data.importer import allowed, detect, normalize, persist, quality_report, read_file, save_upload
-from data.sample_data import generate
-from database.db import connect, initialize
+from data.sample_data import build_enterprise_10k_dataframe, generate
+from database.db import connect, create_backup, get_journal_mode, initialize, list_backups
+from database.models import inspect_schema_summary
 
 app = Flask(
     __name__,
@@ -137,34 +146,82 @@ def audit(action, detail="", user_id=None):
         conn.close()
 
 
-def data_frame():
-    ws_id = workspace_id()
-    if ws_id is None:
-        return pd.DataFrame(columns=["txn_date", "revenue", "expense", "cost", "investment"])
+def raw_data_frame(ws_id=None):
+    target_ws = ws_id if ws_id is not None else workspace_id()
+    cols = ["txn_date", "revenue", "expense", "cost", "investment"]
+    if target_ws is None:
+        return pd.DataFrame(columns=cols)
     conn = connect()
     df = pd.read_sql_query(
         "SELECT * FROM financial_transactions WHERE workspace_id=?",
         conn,
-        params=(ws_id,),
+        params=(target_ws,),
     )
     conn.close()
     if df.empty:
-        return pd.DataFrame(columns=["txn_date", "revenue", "expense", "cost", "investment"])
+        return pd.DataFrame(columns=cols)
     df.txn_date = pd.to_datetime(df.txn_date)
-    for field in ("start", "end", "department", "product", "category"):
-        value = request.args.get(field)
-        if value:
-            if field == "start":
-                parsed = pd.to_datetime(value, errors="coerce")
-                if pd.notna(parsed):
-                    df = df[df.txn_date >= parsed]
-            elif field == "end":
-                parsed = pd.to_datetime(value, errors="coerce")
-                if pd.notna(parsed):
-                    df = df[df.txn_date <= parsed]
-            else:
-                df = df[df[field] == value]
     return df
+
+
+def _apply_filters(df, source_args=None):
+    if df is None or df.empty:
+        return df
+    args = source_args if source_args is not None else request.args
+    out = df
+    for field in ("start", "end", "year", "department", "product", "category", "region"):
+        value = str(args.get(field) or "").strip()
+        if not value:
+            continue
+        if field == "start":
+            parsed = pd.to_datetime(value, errors="coerce")
+            if pd.notna(parsed):
+                out = out[out.txn_date >= parsed]
+        elif field == "end":
+            parsed = pd.to_datetime(value, errors="coerce")
+            if pd.notna(parsed):
+                out = out[out.txn_date <= parsed]
+        elif field == "year":
+            try:
+                yr = int(value)
+                if "fiscal_year" in out.columns and out["fiscal_year"].notna().any():
+                    fy = pd.to_numeric(out["fiscal_year"], errors="coerce").fillna(out.txn_date.dt.year)
+                else:
+                    fy = out.txn_date.dt.year
+                out = out[fy == yr]
+            except (TypeError, ValueError):
+                pass
+        elif field in out.columns:
+            out = out[out[field].astype(str) == value]
+    return out
+
+
+def data_frame():
+    return _apply_filters(raw_data_frame())
+
+
+def _filter_options(df):
+    if df is None or df.empty:
+        return {"years": [], "regions": [], "departments": []}
+    fy = pd.to_numeric(df["fiscal_year"], errors="coerce") if "fiscal_year" in df.columns else df.txn_date.dt.year
+    fy = fy.fillna(df.txn_date.dt.year).dropna().astype(int)
+    years = sorted(fy.unique().tolist(), reverse=True)
+    regions = sorted(
+        [str(x).strip() for x in df["region"].dropna().unique().tolist() if str(x).strip() and str(x).strip().lower() != "none"]
+    )[:40] if "region" in df.columns else []
+    departments = sorted(
+        [str(x).strip() for x in df["department"].dropna().unique().tolist() if str(x).strip() and str(x).strip().lower() != "none"]
+    )[:40] if "department" in df.columns else []
+    return {"years": years, "regions": regions, "departments": departments}
+
+
+def _active_dataset_label(ws_id):
+    if ws_id is None:
+        return None
+    conn = connect()
+    row = conn.execute("SELECT filename FROM imports WHERE workspace_id=? ORDER BY id DESC LIMIT 1", (ws_id,)).fetchone()
+    conn.close()
+    return row["filename"] if row else None
 
 
 def settings():
@@ -402,13 +459,17 @@ def logout():
 def user_dashboard():
     ws_id = workspace_id()
     has_data = has_workspace_data(ws_id)
-    df = data_frame()
+    raw_df = raw_data_frame(ws_id)
+    df = _apply_filters(raw_df)
     cfg = settings()
     curr = cfg.get("currency", "INR")
     margin_threshold = _setting_float(cfg, "margin_threshold", 15.0, min_val=0.0, max_val=100.0)
     m = metrics(df)
     series = monthly(df)
     series_rows = fmt_rows(series.assign(period=series.period.dt.strftime("%Y-%m")).to_dict("records"))
+    ml_info = ml_summary(df)
+    runway = compute_cashflow_runway(df)
+    ml_brief = ml_insights_narrative(ml_info, runway, curr)
     insights = []
     if len(series) >= 2:
         rg, eg = period_growth(series.revenue), period_growth(series.expense)
@@ -425,6 +486,10 @@ def user_dashboard():
         has_data=has_data,
         series=series_rows,
         brief=overview_narrative(df, series_rows, margin_threshold, curr),
+        ml_info=ml_info,
+        runway=runway,
+        ml_brief=ml_brief,
+        filter_options=_filter_options(raw_df),
         insights=insights,
         portal="user",
     )
@@ -493,19 +558,23 @@ def user_forecasting():
     target = request.args.get("target", "revenue")
     if target not in {"revenue", "expense", "profit"}:
         target = "revenue"
+    model_type = request.args.get("model", "auto").strip().lower()
+    if model_type not in {"auto", "rf", "ols", "linear"}:
+        model_type = "auto"
     default_horizon = _setting_int(cfg, "forecast_period", 6, min_val=3, max_val=24)
     try:
         horizon = int(request.args.get("horizon", default_horizon))
     except (TypeError, ValueError):
         horizon = default_horizon
     horizon = min(max(horizon, 3), 24)
-    res = forecast(data_frame(), target, horizon)
+    res = forecast(data_frame(), target, horizon, model_type=model_type)
     return render_template(
         "forecasting.html",
         result=res,
         brief=forecast_narrative(res, target, horizon, curr),
         target=target,
         horizon=horizon,
+        model_type=model_type,
         portal="user",
     )
 
@@ -685,14 +754,278 @@ def user_data():
         except Exception:
             item["quality"] = {}
         imports.append(item)
-    return render_template("data.html", imports=imports, portal="user")
+    receipt_preview = session.get("receipt_preview")
+    return render_template(
+        "data.html",
+        imports=imports,
+        receipt_preview=receipt_preview,
+        today=datetime.utcnow().strftime("%Y-%m-%d"),
+        portal="user",
+    )
+
+
+def _persist_single_record(ws_id, item, source_label="manual_entry.csv", audit_event="transaction_added"):
+    frame = pd.DataFrame([item])
+    mapping = detect(frame.columns)
+    report = quality_report(frame, mapping)
+    if report["missing_required"]:
+        return False, "Missing required fields: " + ", ".join(report["missing_required"]), 0
+    cleaned, excluded = normalize(frame, mapping)
+    if cleaned.empty:
+        return False, "Invalid date or negative monetary amounts.", 0
+    report["entry_source"] = source_label
+    persist(cleaned, source_label, report, excluded, ws_id, enrich_ml=True)
+    audit(audit_event, f"{item.get('product') or item.get('category') or 'Entry'}")
+    if g.user and not cleaned.empty:
+        sync_rows = [
+            {
+                "date": r["txn_date"].strftime("%Y-%m-%d"),
+                "transaction_id": r["transaction_id"],
+                "transaction_type": r["transaction_type"],
+                "category": r["category"],
+                "product": r["product"],
+                "department": r["department"],
+                "region": r["region"],
+                "revenue": float(r["revenue"]),
+                "expense": float(r["expense"]),
+                "cost": float(r["cost"]),
+                "quantity": float(r["quantity"]),
+                "unit_price": float(r["unit_price"]),
+                "investment": float(r["investment"]),
+                "notes": r["notes"],
+            }
+            for _, r in cleaned.iterrows()
+        ]
+        imp_sig = hashlib.sha1(f"{g.user['email']}:{source_label}:{datetime.utcnow().isoformat()}".encode("utf-8")).hexdigest()[:16]
+        updater.mirror_dataset_import(
+            g.user["email"],
+            source_label,
+            f"desktop-{imp_sig}",
+            sync_rows,
+            server_port=_local_server_port(),
+        )
+    return True, "Transaction added and scored via Random Forest.", len(cleaned)
+
+
+@app.route("/user/transaction", methods=["POST"])
+@login_required
+def user_transaction():
+    ws_id = workspace_id()
+    data = request.get_json(silent=True) if request.is_json else request.form
+    flow_type = str(data.get("flow_type") or "").strip().lower()
+    txn_type = str(data.get("transaction_type") or ("Income" if flow_type == "income" else "Expense")).strip()
+    date_str = str(data.get("date") or data.get("txn_date") or datetime.utcnow().strftime("%Y-%m-%d")).strip()
+    if pd.isna(pd.to_datetime(date_str, errors="coerce")):
+        msg = "Enter a valid transaction date."
+        if request.is_json:
+            return jsonify({"ok": False, "error": msg}), 400
+        flash(msg, "error")
+        return redirect(url_for("user_data"))
+
+    try:
+        if data.get("amount") is not None and str(data.get("amount")).strip() != "":
+            amt_val = float(data.get("amount"))
+            is_inc = flow_type in {"income", "credit", "sale", "revenue"} or "income" in txn_type.lower() or "sale" in txn_type.lower() or "salary" in txn_type.lower()
+            rev_val = amt_val if is_inc else 0.0
+            exp_val = 0.0 if is_inc else amt_val
+        else:
+            rev_val = float(data.get("revenue") or 0.0)
+            exp_val = float(data.get("expense") or 0.0)
+        cost_val = float(data.get("cost") or 0.0)
+        tax_val = float(data.get("tax_amount") or 0.0)
+    except (TypeError, ValueError):
+        if request.is_json:
+            return jsonify({"ok": False, "error": "Enter valid numeric values."}), 400
+        flash("Enter valid numeric values for transaction amounts.", "error")
+        return redirect(url_for("user_data"))
+
+    if rev_val < 0 or exp_val < 0 or (rev_val + exp_val) <= 0:
+        msg = "Enter a positive transaction amount."
+        if request.is_json:
+            return jsonify({"ok": False, "error": msg}), 400
+        flash(msg, "error")
+        return redirect(url_for("user_data"))
+
+    item = {
+        "Date": date_str,
+        "Transaction Type": txn_type,
+        "Category": str(data.get("category") or "").strip(),
+        "Product": str(data.get("product") or data.get("vendor_name") or "General Entry").strip(),
+        "Department": str(data.get("department") or "Operations").strip(),
+        "Region": str(data.get("region") or "Primary").strip(),
+        "Payment Method": str(data.get("payment_method") or "Bank Transfer").strip(),
+        "Vendor Name": str(data.get("vendor_name") or "").strip(),
+        "Revenue": rev_val,
+        "Expense": exp_val,
+        "Cost": max(0.0, cost_val),
+        "Tax Amount": max(0.0, tax_val),
+        "Notes": str(data.get("notes") or "Manual ledger entry").strip(),
+    }
+    ok, msg, count = _persist_single_record(ws_id, item, source_label="manual_entry.csv", audit_event="transaction_added")
+    if request.is_json:
+        return jsonify({"ok": ok, "message": msg, "rows_imported": count}), (201 if ok else 400)
+    flash(msg, "success" if ok else "error")
+    return redirect(url_for("user_data"))
+
+
+@app.route("/user/receipt-scan", methods=["POST"])
+@login_required
+def user_receipt_scan():
+    ws_id = workspace_id()
+    file = request.files.get("document") or request.files.get("receipt")
+    wants_json = request.is_json or "application/json" in (request.headers.get("Accept") or "") or request.headers.get("X-Requested-With") == "fetch"
+    if not file or not file.filename:
+        if wants_json:
+            return jsonify({"ok": False, "error": "Upload a PNG, JPG, WEBP, or PDF receipt/invoice."}), 400
+        flash("Select a PNG, JPG, WEBP, or PDF receipt image/document.", "error")
+        return redirect(url_for("user_data"))
+
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in config.ALLOWED_DOCUMENT_EXTENSIONS:
+        msg = "Supported document types: PNG, JPG, JPEG, WEBP, or PDF."
+        if wants_json:
+            return jsonify({"ok": False, "error": msg}), 400
+        flash(msg, "error")
+        return redirect(url_for("user_data"))
+
+    path = save_upload(file, ws_id)
+    extracted = extract_document_details(path)
+    fields = extracted.get("fields") or extracted
+    date_val = fields.get("date") or fields.get("txn_date") or datetime.utcnow().strftime("%Y-%m-%d")
+    preview_fields = {
+        "date": date_val,
+        "txn_date": date_val,
+        "transaction_type": fields.get("transaction_type") or "Expense",
+        "vendor_name": fields.get("vendor_name") or "",
+        "category": fields.get("category") or "",
+        "department": fields.get("department") or "Operations",
+        "payment_method": fields.get("payment_method") or "UPI / Card",
+        "revenue": float(fields.get("revenue") or 0.0),
+        "expense": float(fields.get("expense") or fields.get("amount") or 0.0),
+        "tax_amount": float(fields.get("tax_amount") or 0.0),
+        "notes": fields.get("notes") or f"Extracted from {secure_filename(file.filename)}",
+    }
+    preview_payload = {
+        "filename": secure_filename(file.filename) or "receipt",
+        "ocr_engine": extracted.get("ocr_engine", "Offline Parser"),
+        "confidence": float(extracted.get("confidence", 0.0) or 0.0),
+        "raw_text": str(extracted.get("raw_text") or "")[:900],
+        "fields": preview_fields,
+        "data": preview_fields,
+        "error": extracted.get("error"),
+        "warnings": extracted.get("warnings") or [],
+    }
+    session["receipt_preview"] = preview_payload
+    if wants_json:
+        return jsonify({"ok": True, **preview_payload})
+    if extracted.get("error"):
+        flash(f"Document scanned ({preview_payload['ocr_engine']}); review and fill any missing fields below.", "warning")
+    else:
+        flash(f"Document extracted offline ({preview_payload['ocr_engine']}). Review details below to confirm import.", "success")
+    return redirect(url_for("user_data"))
+
+
+@app.route("/user/receipt-confirm", methods=["POST"])
+@login_required
+def user_receipt_confirm():
+    ws_id = workspace_id()
+    data = request.get_json(silent=True) if request.is_json else request.form
+    flow_type = str(data.get("flow_type") or "").strip().lower()
+    txn_type = str(data.get("transaction_type") or ("Income" if flow_type == "income" else "Expense")).strip()
+    date_str = str(data.get("date") or data.get("txn_date") or datetime.utcnow().strftime("%Y-%m-%d")).strip()
+    try:
+        if data.get("amount") is not None and str(data.get("amount")).strip() != "":
+            amt_val = float(data.get("amount"))
+            is_inc = flow_type in {"income", "credit", "sale", "revenue"} or "income" in txn_type.lower() or "sale" in txn_type.lower()
+            rev_val = amt_val if is_inc else 0.0
+            exp_val = 0.0 if is_inc else amt_val
+        else:
+            rev_val = float(data.get("revenue") or 0.0)
+            exp_val = float(data.get("expense") or 0.0)
+        tax_val = float(data.get("tax_amount") or 0.0)
+    except (TypeError, ValueError):
+        if request.is_json:
+            return jsonify({"ok": False, "error": "Enter valid numeric amounts."}), 400
+        flash("Enter valid numeric receipt amounts.", "error")
+        return redirect(url_for("user_data"))
+
+    vendor = str(data.get("vendor_name") or "Scanned Receipt").strip()
+    item = {
+        "Date": date_str,
+        "Transaction Type": txn_type,
+        "Category": str(data.get("category") or "").strip(),
+        "Product": str(data.get("product") or vendor).strip(),
+        "Department": str(data.get("department") or "Operations").strip(),
+        "Region": str(data.get("region") or "Primary").strip(),
+        "Payment Method": str(data.get("payment_method") or "UPI / Card").strip(),
+        "Vendor Name": vendor,
+        "Revenue": max(0.0, rev_val),
+        "Expense": max(0.0, exp_val),
+        "Tax Amount": max(0.0, tax_val),
+        "Notes": str(data.get("notes") or f"Receipt import ({vendor})").strip(),
+    }
+    ok, msg, count = _persist_single_record(ws_id, item, source_label="scanned_receipt.csv", audit_event="receipt_imported")
+    session.pop("receipt_preview", None)
+    if request.is_json:
+        return jsonify({"ok": ok, "message": msg, "rows_imported": count}), (201 if ok else 400)
+    flash("Receipt transaction confirmed, classified, and saved to workspace." if ok else msg, "success" if ok else "error")
+    return redirect(url_for("user_data"))
+
+
+@app.route("/user/load-enterprise-sample", methods=["POST"])
+@login_required
+def user_load_enterprise_sample():
+    ws_id = workspace_id()
+    frame = build_enterprise_10k_dataframe(n_rows=10000, seed=2026)
+    mapping = detect(frame.columns)
+    report = quality_report(frame, mapping)
+    cleaned, excluded = normalize(frame, mapping)
+    persist(cleaned, "finance_pulse_enterprise_10k.csv", report, excluded, ws_id, enrich_ml=True)
+    audit("enterprise_sample_loaded", f"{len(cleaned)} rows x 26 fields")
+    flash(f"{len(cleaned):,} enterprise transactions (26 fields) loaded and scored offline via Random Forest.", "success")
+    return redirect(url_for("user_dashboard"))
+
+
+@app.route("/api/copilot/ask", methods=["POST"])
+@login_required
+def api_copilot_ask():
+    ws_id = workspace_id()
+    payload = request.get_json(silent=True) or {}
+    question = str(payload.get("question") or "").strip()
+    if not question:
+        return jsonify({"ok": False, "error": "Enter a question for your offline financial copilot."}), 400
+    language = str(payload.get("language") or "auto").strip().lower()
+    raw_df = raw_data_frame(ws_id)
+    filtered_df = _apply_filters(raw_df, payload.get("filters") or {})
+    cfg = settings()
+    curr = cfg.get("currency", "INR")
+    margin_threshold = _setting_float(cfg, "margin_threshold", 15.0, min_val=0.0, max_val=100.0)
+    anom_mult = _setting_float(cfg, "anomaly_threshold", 1.5, min_val=0.5, max_val=10.0)
+    mask_pii = cfg.get("pii_masking", "1") == "1"
+
+    reply = ask_copilot(
+        question=question,
+        df=filtered_df,
+        currency=curr,
+        margin_threshold=margin_threshold,
+        anomaly_multiplier=anom_mult,
+        language=language,
+        filename_meta=_active_dataset_label(ws_id),
+    )
+    if mask_pii and isinstance(reply.get("answer"), str):
+        reply["answer"], _ = mask_pii_text(reply["answer"], enabled=True)
+    return jsonify(reply)
 
 
 @app.route("/user/export.csv")
 @login_required
 def user_export():
+    cfg = settings()
+    df = data_frame()
+    if cfg.get("pii_masking", "1") == "1" and not df.empty:
+        df, _ = mask_dataframe_pii(df, enabled=True)
     out = io.StringIO()
-    data_frame().to_csv(out, index=False)
+    df.to_csv(out, index=False)
     return send_file(
         io.BytesIO(out.getvalue().encode("utf-8")),
         mimetype="text/csv",
@@ -701,16 +1034,50 @@ def user_export():
     )
 
 
+@app.route("/user/charts-pack.zip")
+@login_required
+def user_charts_pack():
+    cfg = settings()
+    curr = cfg.get("currency", "INR")
+    horizon = _setting_int(cfg, "forecast_period", 6, min_val=3, max_val=24)
+    zip_bytes = build_charts_zip(data_frame(), currency=curr, horizon=horizon)
+    audit("report_exported", "Chart pack ZIP")
+    return send_file(
+        io.BytesIO(zip_bytes),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="finance_pulse_charts.zip",
+    )
+
+
+@app.route("/user/powerbi-kit.zip")
+@login_required
+def user_powerbi_kit():
+    cfg = settings()
+    curr = cfg.get("currency", "INR")
+    mask_pii = cfg.get("pii_masking", "1") == "1"
+    zip_bytes = build_powerbi_kit_zip(data_frame(), currency=curr, mask_pii=mask_pii)
+    audit("report_exported", "Power BI Ready Kit")
+    return send_file(
+        io.BytesIO(zip_bytes),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="finance_pulse_powerbi_kit.zip",
+    )
+
+
 @app.route("/user/report.pdf")
 @login_required
 def user_report():
     from reportlab.lib.pagesizes import A4
-    from reportlab.lib.utils import simpleSplit
+    from reportlab.lib.utils import ImageReader, simpleSplit
     from reportlab.pdfgen import canvas
 
     curr = settings().get("currency", "INR")
     df = data_frame()
     m = metrics(df)
+    runway = compute_cashflow_runway(df)
+    ms = ml_summary(df)
     top_products = by_dimension(df, "product")[:5]
     stream = io.BytesIO()
     pdf = canvas.Canvas(stream, pagesize=A4)
@@ -751,12 +1118,14 @@ def user_report():
         ("Expense Ratio", _fmt("expense_ratio", "pct")),
         ("ROI", _fmt("roi", "pct")),
         ("Transactions", _fmt("transactions", "int")),
+        ("Cashflow Posture", runway.get("status", "N/A")),
+        ("Random Forest Risk Split", f"{ms['low_risk']} Low / {ms['moderate_risk']} Moderate / {ms['high_risk']} High"),
     ]
     for label, text_val in summary_rows:
         pdf.drawString(50, y, f"{label}: {text_val}")
-        y -= 22
+        y -= 20
 
-    if top_products and y > 180:
+    if top_products and y > 170:
         y -= 10
         pdf.setFont("Helvetica-Bold", 12)
         pdf.drawString(50, y, "Top Product Profitability")
@@ -770,6 +1139,18 @@ def user_report():
                 f"{row['product']}  —  Revenue: {curr} {row['revenue']:,.2f}  |  Profit: {curr} {row['profit']:,.2f}  |  Margin: {margin_txt}",
             )
             y -= 18
+
+    if df is not None and len(df) >= 2:
+        cash_png = render_monthly_cashflow_png(df, currency=curr)
+        seg_png = render_segment_profit_png(df, dimension="product", currency=curr)
+        if cash_png or seg_png:
+            pdf.showPage()
+            pdf.setFont("Helvetica-Bold", 14)
+            pdf.drawString(50, 800, f"{config.APP_NAME} — Executive Visual Charts")
+            if cash_png:
+                pdf.drawImage(ImageReader(io.BytesIO(cash_png)), 42, 470, width=510, height=245, preserveAspectRatio=True)
+            if seg_png:
+                pdf.drawImage(ImageReader(io.BytesIO(seg_png)), 42, 185, width=510, height=235, preserveAspectRatio=True)
 
     pdf.save()
     stream.seek(0)
@@ -953,9 +1334,9 @@ def admin_toggle_user_status(user_id):
 def admin_audit():
     category = request.args.get("category", "all").strip().lower()
     groups = {
-        "imports": ("dataset_imported",),
+        "imports": ("dataset_imported", "receipt_imported", "enterprise_sample_loaded", "transaction_added"),
         "scenarios": ("scenario_created",),
-        "governance": ("admin_created", "settings_updated", "user_status_changed", "report_exported"),
+        "governance": ("admin_created", "settings_updated", "user_status_changed", "report_exported", "backup_created"),
         "auth": ("user_registered", "user_login", "admin_login", "logout"),
     }
     conn = connect()
@@ -971,6 +1352,52 @@ def admin_audit():
     logs = [dict(r) for r in conn.execute(query, params)]
     conn.close()
     return render_template("admin_audit.html", logs=logs, category=category, portal="admin")
+
+
+@app.route("/admin/backups", methods=["GET", "POST"])
+@admin_required
+def admin_backups():
+    if request.method == "POST":
+        label = request.form.get("label", "manual").strip() or "manual"
+        info = create_backup(label=label)
+        audit("backup_created", f"{info['filename']} ({info['integrity']})")
+        flash(f"Verified SQLite backup created: {info['filename']} ({info['transactions']:,} rows, {info['integrity']}).", "success")
+        return redirect(url_for("admin_backups"))
+
+    backups = list_backups()
+    schema_map = inspect_schema_summary()
+    conn = connect()
+    try:
+        tx_count = int(conn.execute("SELECT COUNT(*) FROM financial_transactions").fetchone()[0])
+    finally:
+        conn.close()
+    schema_info = {
+        "tables": schema_map,
+        "table_count": len(schema_map),
+        "transaction_count": tx_count,
+    }
+    art_path = model_artifact_path()
+    return render_template(
+        "admin_backups.html",
+        backups=backups,
+        journal_mode=get_journal_mode(),
+        schema_info=schema_info,
+        ml_model_saved=art_path.exists(),
+        ml_model_path=str(art_path),
+        portal="admin",
+    )
+
+
+@app.route("/admin/backups/download/<filename>")
+@admin_required
+def admin_backup_download(filename):
+    if not re.fullmatch(r"finance_pulse_[A-Za-z0-9_.-]+\.db", filename or ""):
+        abort(404)
+    backup_dir = Path(config.BACKUPS_DIR).resolve()
+    target = (backup_dir / filename).resolve()
+    if target.parent != backup_dir or not target.is_file():
+        abort(404)
+    return send_file(target, as_attachment=True, download_name=target.name)
 
 
 @app.route("/admin/settings", methods=["GET", "POST"])
@@ -1001,6 +1428,8 @@ def admin_settings():
             "forecast_period": str(forecast_period),
             "date_format": date_format,
         }
+        if "pii_masking_form" in request.form:
+            values["pii_masking"] = "1" if request.form.get("pii_masking") in {"1", "on", "true"} else "0"
         conn = connect()
         for key, val in values.items():
             conn.execute(
@@ -1209,6 +1638,62 @@ def api_v1_sync_import():
     }), 201
 
 
+@app.route("/api/v1/copilot/ask", methods=["POST", "OPTIONS"])
+def api_v1_copilot_ask():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    api_user, err_resp = _verify_api_user()
+    if err_resp:
+        return err_resp
+    payload = request.get_json(silent=True) or {}
+    question = str(payload.get("question") or "").strip()
+    if not question:
+        return jsonify({"ok": False, "error": "Provide a question for Copilot."}), 400
+    conn = connect()
+    ws = conn.execute("SELECT id FROM workspaces WHERE owner_user_id=? ORDER BY id LIMIT 1", (api_user["id"],)).fetchone()
+    conn.close()
+    ws_id_val = ws["id"] if ws else None
+    df = _apply_filters(raw_data_frame(ws_id_val), payload.get("filters") or {})
+    cfg = settings()
+    curr = cfg.get("currency", "INR")
+    margin_threshold = _setting_float(cfg, "margin_threshold", 15.0, min_val=0.0, max_val=100.0)
+    anom_mult = _setting_float(cfg, "anomaly_threshold", 1.5, min_val=0.5, max_val=10.0)
+    reply = ask_copilot(
+        question=question,
+        df=df,
+        currency=curr,
+        margin_threshold=margin_threshold,
+        anomaly_multiplier=anom_mult,
+        language=str(payload.get("language") or "auto").strip().lower(),
+        filename_meta=_active_dataset_label(ws_id_val),
+    )
+    if cfg.get("pii_masking", "1") == "1" and isinstance(reply.get("answer"), str):
+        reply["answer"], _ = mask_pii_text(reply["answer"], enabled=True)
+    return jsonify(reply)
+
+
+@app.route("/api/v1/powerbi/feed", methods=["GET", "OPTIONS"])
+def api_v1_powerbi_feed():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    api_user, err_resp = _verify_api_user()
+    if err_resp:
+        return err_resp
+    conn = connect()
+    ws = conn.execute("SELECT id FROM workspaces WHERE owner_user_id=? ORDER BY id LIMIT 1", (api_user["id"],)).fetchone()
+    conn.close()
+    ws_id_val = ws["id"] if ws else None
+    df = _apply_filters(raw_data_frame(ws_id_val))
+    cfg = settings()
+    curr = cfg.get("currency", "INR")
+    mask_pii = cfg.get("pii_masking", "1") == "1"
+    try:
+        limit = int(request.args.get("limit", 5000))
+    except (TypeError, ValueError):
+        limit = 5000
+    return jsonify(build_powerbi_feed(df, currency=curr, mask_pii=mask_pii, limit=limit))
+
+
 # ---------------------------------------------------------------------------
 # Desktop In-App Updater & Owner Hidden Operator Sync Controls
 # ---------------------------------------------------------------------------
@@ -1273,7 +1758,7 @@ def forbidden(e):
 
 @app.errorhandler(413)
 def too_large(e):
-    flash("File is too large (maximum 16 MB).", "error")
+    flash("File is too large (maximum 32 MB).", "error")
     return redirect(url_for("user_data"))
 
 

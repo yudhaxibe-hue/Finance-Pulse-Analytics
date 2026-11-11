@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Test Suite (pytest + coverage)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python -m pytest tests -v --cov=analytics --cov=data --cov=database --cov=app --cov=updater",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Finance Pulse Web Server",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/python -m app_launcher --browser",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}

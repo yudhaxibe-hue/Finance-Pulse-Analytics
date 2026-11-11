@@ -32,5 +32,6 @@ public class UpdateManifestHelperTest {
     public void formatsShaHexLowercase() {
         assertEquals("000aff", UpdateManifestHelper.bytesToHex(new byte[]{0x00, 0x0a, (byte) 0xff}));
         assertTrue(UpdateManifestHelper.DEFAULT_MANIFEST_URL.startsWith("https://github.com/"));
+        assertEquals("1.2.0", UpdateManifestHelper.BUNDLED_VERSION_NAME);
     }
 }

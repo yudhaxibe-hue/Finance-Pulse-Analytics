@@ -8,7 +8,7 @@ ROOT_DIR = Path.cwd()
 ICON_PATH = ROOT_DIR / "packaging" / "assets" / "finance_pulse.icns"
 
 BUILD_INFO_PATH = ROOT_DIR / "build_info.json"
-APP_VER = "1.1.0"
+APP_VER = "1.2.0"
 if BUILD_INFO_PATH.is_file():
     try:
         APP_VER = str(json.loads(BUILD_INFO_PATH.read_text(encoding="utf-8")).get("version") or APP_VER)
@@ -31,38 +31,60 @@ hiddenimports = [
     "werkzeug",
     "werkzeug.serving",
     "werkzeug.security",
+    "sqlalchemy",
+    "sqlalchemy.dialects.sqlite",
     "pandas",
     "numpy",
+    "scipy",
+    "scipy.special",
+    "scipy.sparse",
+    "sklearn",
+    "sklearn.ensemble",
+    "sklearn.feature_extraction.text",
+    "sklearn.linear_model",
+    "sklearn.pipeline",
+    "sklearn.metrics",
+    "joblib",
+    "matplotlib",
+    "matplotlib.backends.backend_agg",
+    "seaborn",
     "openpyxl",
+    "pypdf",
+    "PIL",
     "reportlab",
     "reportlab.pdfgen",
     "reportlab.pdfgen.canvas",
     "reportlab.lib.pagesizes",
     "webview",
     "webview.platforms.cocoa",
+    "Vision",
     "analytics",
     "analytics.anomalies",
+    "analytics.copilot",
     "analytics.financial_metrics",
     "analytics.forecasting",
     "analytics.intelligence",
+    "analytics.ml_engine",
     "analytics.optimization",
+    "analytics.powerbi",
+    "analytics.privacy",
     "analytics.profitability",
+    "analytics.receipt_ocr",
+    "analytics.visuals",
     "data",
     "data.importer",
     "data.sample_data",
     "database",
     "database.db",
+    "database.models",
 ]
 
 excludes = [
     "tkinter",
-    "matplotlib",
-    "scipy",
-    "sklearn",
-    "statsmodels",
     "pytest",
     "IPython",
     "notebook",
+    "pptx",
 ]
 
 a = Analysis(

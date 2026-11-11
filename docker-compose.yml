@@ -1,0 +1,15 @@
+services:
+  finance-pulse:
+    build: .
+    container_name: finance-pulse-analytics
+    ports:
+      - "8000:8000"
+    environment:
+      - FINANCE_PULSE_DATA_DIR=/data
+      - PORT=8000
+    volumes:
+      - finance_pulse_data:/data
+    restart: unless-stopped
+
+volumes:
+  finance_pulse_data:

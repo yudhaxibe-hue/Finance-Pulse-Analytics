@@ -24,6 +24,13 @@
           <span>months</span>
         </span>
       </label>
+      <label>Model engine
+        <select name="model">
+          <option value="auto" {{ 'selected' if model_type=='auto' }}>Auto (Random Forest ≥6 mo)</option>
+          <option value="rf" {{ 'selected' if model_type=='rf' }}>Random Forest Regressor</option>
+          <option value="ols" {{ 'selected' if model_type=='ols' }}>Linear trend regression</option>
+        </select>
+      </label>
       <button>Generate forecast</button>
     </form>
   </div>
@@ -57,20 +64,39 @@
       <div class="panel-head">
         <div>
           <h2>{{ target.title() }} history and forecast</h2>
-          <p>Solid series reflects observed monthly history; dashed segment projects the next {{ horizon }} months.</p>
+          <p>
+            Solid series reflects observed monthly history; dashed segment projects the next {{ horizon }} months with confidence interval.
+            {% if result.accuracy.r2 is defined %}
+              R² {{ result.accuracy.r2 }}
+              {% if result.accuracy.ols_mae is defined and result.model_code == 'rf' %}
+                · OLS baseline MAE {{ '{:,.2f}'.format(result.accuracy.ols_mae) }}
+              {% endif %}
+            {% endif %}
+          </p>
         </div>
       </div>
       <div class="chart-box">
         <canvas id="forecast"></canvas>
       </div>
-      <p class="chart-note">MAE and RMSE report average historical error in currency units ({{ currency }}); MAPE reports average percentage error. This baseline applies linear trend regression and supports, rather than replaces, financial judgment.</p>
+      {% if result.feature_importances and result.feature_importances|length > 1 %}
+        <div class="rf-importance-list" aria-label="Random Forest driver weights">
+          {% for feat in result.feature_importances[:4] %}
+            <div class="margin-row">
+              <span class="muted">{{ feat.feature }}</span>
+              <div class="margin-track"><div class="margin-fill" style="width: {{ [feat.importance, 100]|min }}%;"></div></div>
+              <span class="num">{{ feat.importance }}%</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+      <p class="chart-note">MAE and RMSE report average historical error in currency units ({{ currency }}); MAPE reports average percentage error. {{ 'Predictions combine time-trend stabilization with an offline Random Forest Regressor trained on seasonal & rolling lag features.' if result.model_code == 'rf' else 'This baseline applies linear trend regression and supports, rather than replaces, financial judgment.' }}</p>
     </section>
 
     <section class="panel">
       <div class="panel-head">
         <div>
           <h2>Projected monthly values</h2>
-          <p>Point-in-time linear estimates across the selected {{ horizon }}-month horizon.</p>
+          <p>Projected estimate alongside lower/upper interval bounds across the {{ horizon }}-month horizon.</p>
         </div>
       </div>
       <div class="tablewrap">
@@ -79,6 +105,8 @@
             <tr>
               <th>Period</th>
               <th class="num">Projected {{ target }}</th>
+              <th class="num">Lower bound</th>
+              <th class="num">Upper bound</th>
             </tr>
           </thead>
           <tbody>
@@ -86,6 +114,8 @@
               <tr>
                 <td class="tabular">{{ row.period }}</td>
                 <td class="num">{{ '{:,.2f}'.format(row.value) }}</td>
+                <td class="num muted">{{ '{:,.2f}'.format(row.low) if row.low is defined else '—' }}</td>
+                <td class="num muted">{{ '{:,.2f}'.format(row.high) if row.high is defined else '—' }}</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -102,12 +132,38 @@
         const forecastData = h.length
           ? [...h.slice(0, -1).map(() => null), ...bridge, ...f.map(x => x.value)]
           : f.map(x => x.value);
+        const lowBand = h.length
+          ? [...h.slice(0, -1).map(() => null), ...bridge, ...f.map(x => (x.low !== undefined ? x.low : x.value))]
+          : f.map(x => x.low || x.value);
+        const highBand = h.length
+          ? [...h.slice(0, -1).map(() => null), ...bridge, ...f.map(x => (x.high !== undefined ? x.high : x.value))]
+          : f.map(x => x.high || x.value);
 
         new Chart(document.getElementById('forecast'), {
           type: 'line',
           data: {
             labels: [...h, ...f].map(x => x.period),
             datasets: [
+              {
+                label: 'Confidence upper',
+                data: highBand,
+                borderColor: 'rgba(0, 102, 204, 0.18)',
+                backgroundColor: 'rgba(0, 102, 204, 0.08)',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: '+1',
+                tension: 0.15
+              },
+              {
+                label: 'Confidence lower',
+                data: lowBand,
+                borderColor: 'rgba(0, 102, 204, 0.18)',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false,
+                tension: 0.15
+              },
               {
                 label: 'Historical',
                 data: [...h.map(x => x.value), ...f.map(() => null)],

@@ -22,8 +22,38 @@
         <label>To
           <input type="date" name="end" value="{{ request.args.get('end', '') }}">
         </label>
-        <button class="secondary">Apply range</button>
-        {% if request.args.get('start') or request.args.get('end') %}
+        {% if filter_options and filter_options.years %}
+          <label>Year
+            <select name="year">
+              <option value="">All years</option>
+              {% for yr in filter_options.years %}
+                <option value="{{ yr }}" {{ 'selected' if request.args.get('year') == (yr|string) }}>{{ yr }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        {% endif %}
+        {% if filter_options and filter_options.regions %}
+          <label>Region
+            <select name="region">
+              <option value="">All regions</option>
+              {% for reg in filter_options.regions %}
+                <option value="{{ reg }}" {{ 'selected' if request.args.get('region') == reg }}>{{ reg }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        {% endif %}
+        {% if filter_options and filter_options.departments %}
+          <label>Department
+            <select name="department">
+              <option value="">All units</option>
+              {% for dep in filter_options.departments %}
+                <option value="{{ dep }}" {{ 'selected' if request.args.get('department') == dep }}>{{ dep }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        {% endif %}
+        <button class="secondary">Apply filter</button>
+        {% if request.args.get('start') or request.args.get('end') or request.args.get('year') or request.args.get('region') or request.args.get('department') %}
           <a class="button quiet" href="{{ url_for('user_dashboard') }}">Reset</a>
         {% endif %}
       </form>
@@ -121,6 +151,49 @@
           </div>
         </article>
       </section>
+
+      {% if ml_info and runway %}
+        <section class="panel" aria-label="Offline Random Forest risk and cashflow runway">
+          <div class="panel-head">
+            <div>
+              <h2>Random Forest risk &amp; cash-flow runway</h2>
+              <p>{{ ml_brief.headline if ml_brief else 'Offline Random Forest classifier risk split and recent cash-flow sustainability.' }}</p>
+            </div>
+            <button type="button" class="button secondary compact" data-copilot-open>
+              {{ icon('sparkles', 14) }}<span>Ask Copilot</span>
+            </button>
+          </div>
+          <div class="kpi-strip cols-4 solver-strip">
+            <div class="kpi-cell">
+              <span class="kpi-label">High-risk entries</span>
+              <strong class="kpi-value {{ 'negative' if ml_info.high_risk > 0 else 'positive' }} num">{{ '{:,}'.format(ml_info.high_risk) }} ({{ ml_info.high_risk_pct }}%)</strong>
+              <span class="solver-sub num">{{ '{:,}'.format(ml_info.moderate_risk) }} mod · {{ '{:,}'.format(ml_info.low_risk) }} low</span>
+            </div>
+            <div class="kpi-cell">
+              <span class="kpi-label">Mean RF risk score</span>
+              <strong class="kpi-value num">{{ ml_info.avg_risk_score }} / 100</strong>
+              <span class="solver-sub num">Exposure {{ currency }} {{ '{:,.0f}'.format(ml_info.high_risk_exposure) }}</span>
+            </div>
+            <div class="kpi-cell">
+              <span class="kpi-label">Recent net pace / mo</span>
+              <strong class="kpi-value {{ 'positive' if runway.recent_monthly_net >= 0 else 'negative' }} num">{{ currency }} {{ '{:,.0f}'.format(runway.recent_monthly_net) }}</strong>
+              <span class="solver-sub num">{{ 'Savings rate ' ~ runway.savings_rate_pct ~ '%' if runway.savings_rate_pct is not none else 'No inflow pace' }}</span>
+            </div>
+            <div class="kpi-cell">
+              <span class="kpi-label">Liquidity posture</span>
+              <strong class="kpi-value">{{ runway.runway_months ~ ' months' if runway.runway_months is not none else 'Self-Sustaining' }}</strong>
+              <span class="solver-sub">{{ runway.status }}</span>
+            </div>
+          </div>
+          {% if ml_info.feature_importances %}
+            <div class="rf-drivers-strip">
+              {% for feat in ml_info.feature_importances[:3] %}
+                <span class="badge">{{ feat.feature }} · {{ feat.importance }}%</span>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </section>
+      {% endif %}
 
       <script>
         window.addEventListener('DOMContentLoaded', function () {
