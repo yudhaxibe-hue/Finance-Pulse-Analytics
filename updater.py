@@ -263,6 +263,8 @@ def check_for_updates(timeout: float = 4.0) -> dict[str, Any]:
             headers={
                 "User-Agent": f"FinancePulseAnalytics/{config.APP_VERSION}",
                 "Accept": "application/json",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
             },
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -335,11 +337,13 @@ def download_desktop_update() -> dict[str, Any]:
         expected_sha = _UPDATE_CACHE.get("sha256", "")
         asset_name = _UPDATE_CACHE.get("asset_name", "") or f"FinancePulseAnalytics-{sys.platform}-update.zip"
 
-    if not dl_url:
+    # Always refresh version.json before downloading so cached SHAs never lag behind a new release.
+    if config.UPDATE_MANIFEST_URL:
         status = check_for_updates(timeout=6.0)
-        dl_url = status.get("download_url", "")
-        expected_sha = status.get("sha256", "")
-        asset_name = status.get("asset_name", "") or asset_name
+        if not status.get("error") and status.get("download_url"):
+            dl_url = status.get("download_url", "")
+            expected_sha = status.get("sha256", "")
+            asset_name = status.get("asset_name", "") or asset_name
 
     if not dl_url or not dl_url.startswith("https://"):
         with _STATE_LOCK:

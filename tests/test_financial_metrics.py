@@ -575,6 +575,76 @@ class SyncAndUpdaterTests(IsolatedDBTestCase):
             srv.shutdown()
             srv.server_close()
 
+    def test_download_desktop_update_refreshes_stale_cached_sha(self):
+        import hashlib
+        from unittest.mock import patch
+        import updater
+
+        archive_bytes = b"PK\x03\x04finance-pulse-v120-archive-payload"
+        fresh_sha = hashlib.sha256(archive_bytes).hexdigest()
+        stale_sha = "8ce256abafa9" + "0" * 52
+
+        dl_dir = Path(self._tmpdir.name) / "dl"
+        dl_dir.mkdir(parents=True, exist_ok=True)
+        config.UPDATE_MANIFEST_URL = "https://updates.example.test/version.json"
+
+        with updater._STATE_LOCK:
+            updater._UPDATE_CACHE["download_url"] = "https://updates.example.test/pkg.zip"
+            updater._UPDATE_CACHE["sha256"] = stale_sha
+            updater._UPDATE_CACHE["asset_name"] = "pkg.zip"
+
+        fresh_manifest = json.dumps({
+            "version": "1.2.0",
+            "build_number": 999,
+            "macos": {
+                "version": "1.2.0",
+                "build_number": 999,
+                "url": "https://updates.example.test/pkg.zip",
+                "sha256": fresh_sha,
+            },
+            "windows": {
+                "version": "1.2.0",
+                "build_number": 999,
+                "url": "https://updates.example.test/pkg.zip",
+                "sha256": fresh_sha,
+            },
+            "linux": {
+                "version": "1.2.0",
+                "build_number": 999,
+                "url": "https://updates.example.test/pkg.zip",
+                "sha256": fresh_sha,
+            },
+        }).encode("utf-8")
+
+        class FakeResp:
+            def __init__(self, body: bytes):
+                self._bio = io.BytesIO(body)
+                self.status = 200
+
+            def read(self, n=-1):
+                return self._bio.read(n)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(req, timeout=10):
+            url = req.full_url if hasattr(req, "full_url") else str(req)
+            if url.endswith("version.json"):
+                return FakeResp(fresh_manifest)
+            return FakeResp(archive_bytes)
+
+        with patch.object(updater, "_download_dir", return_value=dl_dir), patch(
+            "urllib.request.urlopen", side_effect=fake_urlopen
+        ):
+            res = updater.download_desktop_update()
+
+        self.assertEqual(res["download_status"], "ready")
+        self.assertEqual(res["download_error"], "")
+        self.assertTrue(Path(res["download_path"]).is_file())
+
     def test_sync_api_auth_import_dedup_and_admin_visibility(self):
         client = app.app.test_client()
 

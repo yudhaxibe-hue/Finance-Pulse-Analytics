@@ -8,7 +8,7 @@ APP_NAME = "Finance Pulse Analytics"
 APP_SUBTITLE = "Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform"
 APP_TITLE = f"{APP_NAME}: {APP_SUBTITLE}"
 APP_VERSION = "1.2.0"
-APP_BUILD = 16
+APP_BUILD = 18
 
 BASE_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(sys._MEIPASS) if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS") else BASE_DIR
