@@ -8,6 +8,7 @@
     {% if mode == 'register' %}Create your account · {{ app_title }}
     {% elif mode == 'admin_setup' %}Initialize administrator · {{ app_title }}
     {% elif mode == 'admin' %}Administrator sign in · {{ app_title }}
+    {% elif mode == 'forgot_password' %}Reset password offline · {{ app_title }}
     {% else %}Sign in · {{ app_title }}{% endif %}
   </title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
@@ -33,12 +34,14 @@
         {% if mode == 'register' %}Create your account
         {% elif mode == 'admin_setup' %}Initialize administrator
         {% elif mode == 'admin' %}Administrator sign in
+        {% elif mode == 'forgot_password' %}Reset password offline
         {% else %}Sign in{% endif %}
       </h1>
       <p class="muted">
         {% if mode == 'register' %}Your account receives its own private financial workspace.
         {% elif mode == 'admin_setup' %}Create the first owner administrator account for this device.
         {% elif mode == 'admin' %}Administrator Portal · Restricted to authorized operators.
+        {% elif mode == 'forgot_password' %}Verify your security recovery word to safely reset your password locally without internet or external servers.
         {% else %}Access your private Business Workspace.{% endif %}
       </p>
 
@@ -52,25 +55,67 @@
         {% endif %}
       {% endwith %}
 
-      <form method="post" class="stack" autocomplete="{{ 'off' if mode in ('register', 'admin_setup') else 'on' }}">
+      <form method="post" class="stack" autocomplete="{{ 'off' if mode in ('register', 'admin_setup', 'forgot_password') else 'on' }}">
         {% if mode in ('register', 'admin_setup') %}
           <label>Name
             <input name="name" placeholder="Full name" autocomplete="name" required>
           </label>
         {% endif %}
-        <label>Email
-          <input type="email" name="email" placeholder="name@company.com" autocomplete="{{ 'off' if mode in ('register', 'admin_setup') else 'email' }}" required>
-        </label>
-        <label>Password
-          <span class="password-field">
-            <input id="auth-password" type="password" name="password" placeholder="At least 8 characters" autocomplete="{{ 'new-password' if mode in ('register', 'admin_setup') else 'current-password' }}" required minlength="8">
-            <button type="button" class="password-toggle" data-toggle-password="auth-password" aria-label="Show password" aria-pressed="false">
-              <span data-eye="open">{{ icon('eye', 16) }}</span>
-              <span data-eye="off" style="display:none;">{{ icon('eye-off', 16) }}</span>
-            </button>
-          </span>
-        </label>
-        <button class="auth-submit">{{ 'Create account' if mode=='register' else ('Initialize administrator' if mode=='admin_setup' else 'Sign in') }}</button>
+
+        {% if mode == 'forgot_password' %}
+          <label>Registered Email
+            <input type="email" name="email" placeholder="name@company.com" autocomplete="email" required>
+          </label>
+          <label>Security Recovery Word
+            <span class="field-hint" style="display:block; font-size:11.5px; color:var(--ink-secondary); font-weight:normal; margin-bottom:4px;">
+              The secret word or phrase you chose when registering.
+            </span>
+            <input type="text" name="security_word" placeholder="Enter your secret security word" required autocomplete="off">
+          </label>
+          <label>New Password
+            <span class="password-field">
+              <input id="auth-password" type="password" name="password" placeholder="At least 8 characters" autocomplete="new-password" required minlength="8">
+              <button type="button" class="password-toggle" data-toggle-password="auth-password" aria-label="Show password" aria-pressed="false">
+                <span data-eye="open">{{ icon('eye', 16) }}</span>
+                <span data-eye="off" style="display:none;">{{ icon('eye-off', 16) }}</span>
+              </button>
+            </span>
+          </label>
+          <label>Confirm New Password
+            <input type="password" name="confirm_password" placeholder="Confirm your new password" autocomplete="new-password" required minlength="8">
+          </label>
+          <button class="auth-submit">Reset password offline</button>
+        {% else %}
+          <label>Email
+            <input id="auth-email" type="email" name="email" placeholder="name@company.com" autocomplete="{{ 'off' if mode in ('register', 'admin_setup') else 'email' }}" required>
+            {% if mode == 'register' %}
+              <div id="email-avail-indicator" style="font-size:12px; margin-top:4px; display:none; align-items:center; gap:6px;"></div>
+            {% endif %}
+          </label>
+          <label>Password
+            <span class="password-field">
+              <input id="auth-password" type="password" name="password" placeholder="At least 8 characters" autocomplete="{{ 'new-password' if mode in ('register', 'admin_setup') else 'current-password' }}" required minlength="8">
+              <button type="button" class="password-toggle" data-toggle-password="auth-password" aria-label="Show password" aria-pressed="false">
+                <span data-eye="open">{{ icon('eye', 16) }}</span>
+                <span data-eye="off" style="display:none;">{{ icon('eye-off', 16) }}</span>
+              </button>
+            </span>
+          </label>
+          {% if mode == 'login' %}
+            <div style="display:flex; justify-content:flex-end; margin-top:-6px; margin-bottom:4px;">
+              <a href="{{ url_for('forgot_password') }}" style="font-size:12.5px; color:var(--accent); text-decoration:none;">Forgot password? Reset offline</a>
+            </div>
+          {% endif %}
+          {% if mode in ('register', 'admin_setup') %}
+            <label>Security Recovery Word
+              <span class="field-hint" style="display:block; font-size:11.5px; color:var(--ink-secondary); font-weight:normal; margin-bottom:4px;">
+                A secret word or memorable name only you know, used to reset your password offline without internet.
+              </span>
+              <input type="text" name="security_word" placeholder="e.g. secret name, favorite pet, memorable word" autocomplete="off" required minlength="2">
+            </label>
+          {% endif %}
+          <button class="auth-submit">{{ 'Create account' if mode=='register' else ('Initialize administrator' if mode=='admin_setup' else 'Sign in') }}</button>
+        {% endif %}
       </form>
 
       <div class="auth-switch">
@@ -80,6 +125,8 @@
           Already have an account? <a href="{{ url_for('user_login') }}">Sign in</a>
         {% elif mode == 'admin_setup' %}
           Already initialized? <a href="{{ url_for('admin_login') }}">Administrator sign in</a>
+        {% elif mode == 'forgot_password' %}
+          Remembered your password? <a href="{{ url_for('user_login') }}">Back to sign in</a>
         {% else %}
           Looking for your business workspace? <a href="{{ url_for('user_login') }}">User sign in</a>
           {% if needs_admin_setup %}
@@ -89,6 +136,46 @@
       </div>
     </section>
   </main>
+
+  <script>
+    (function() {
+      const emailInput = document.getElementById('auth-email');
+      const availBox = document.getElementById('email-avail-indicator');
+      if (emailInput && availBox) {
+        let timer = null;
+        emailInput.addEventListener('input', function() {
+          clearTimeout(timer);
+          const val = emailInput.value.trim().toLowerCase();
+          if (!val || !val.includes('@') || !val.includes('.')) {
+            availBox.style.display = 'none';
+            return;
+          }
+          availBox.style.display = 'flex';
+          availBox.style.color = 'var(--ink-secondary)';
+          availBox.textContent = 'Checking availability...';
+          timer = setTimeout(async function() {
+            try {
+              const res = await fetch('/api/check-availability?email=' + encodeURIComponent(val));
+              const data = await res.json();
+              if (data.available) {
+                availBox.style.display = 'flex';
+                availBox.style.color = '#0E6027';
+                availBox.textContent = '✓ Account email is available';
+              } else if (data.status === 'taken') {
+                availBox.style.display = 'flex';
+                availBox.style.color = '#C2590A';
+                availBox.innerHTML = '⚠️ Already registered · <a href="{{ url_for("user_login") }}" style="color:inherit; text-decoration:underline;">Sign in</a> or <a href="{{ url_for("forgot_password") }}" style="color:inherit; text-decoration:underline;">Reset password</a>';
+              } else {
+                availBox.style.display = 'none';
+              }
+            } catch (e) {
+              availBox.style.display = 'none';
+            }
+          }, 260);
+        });
+      }
+    })();
+  </script>
 
   <footer class="auth-foot">
     {{ app_title }} · Workspaces remain isolated per account.

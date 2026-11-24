@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  APP_VERSION: "1.2.0"
+  APP_VERSION: "1.3.0"
 
 jobs:
   macos-build:
@@ -300,8 +300,8 @@ jobs:
               "version": app_ver,
               "build_number": build_num,
               "sync_server_url": sync_url,
-              "release_notes": f"Finance Pulse Analytics v{app_ver} (Build {build_num}) with universal auto-updater and wireless sync.",
-              "release_page_url": f"https://github.com/{repo}/releases/tag/v1.0.0",
+              "release_notes": f"Finance Pulse Analytics v{app_ver} (Build {build_num}) with offline recovery, unboxed 3-pillar intelligence, and Power BI surpassing analytics.",
+              "release_page_url": f"https://github.com/{repo}/releases/tag/v{app_ver}",
               "macos": {
                   "version": app_ver,
                   "build_number": build_num,
@@ -335,8 +335,8 @@ jobs:
       - name: Upload Release Archives First (Atomic SHA Window)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: "Finance Pulse Analytics v1.0.0 - Cross-Platform Release"
+          tag_name: v${{ env.APP_VERSION }}
+          name: "Finance Pulse Analytics v${{ env.APP_VERSION }} - Cross-Platform Release"
           draft: false
           prerelease: false
           files: |
@@ -347,8 +347,8 @@ jobs:
       - name: Publish Release Manifest After Binaries
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: "Finance Pulse Analytics v1.0.0 - Cross-Platform Release"
+          tag_name: v${{ env.APP_VERSION }}
+          name: "Finance Pulse Analytics v${{ env.APP_VERSION }} - Cross-Platform Release"
           draft: false
           prerelease: false
           files: |
@@ -356,8 +356,18 @@ jobs:
           body: |
             # Finance Pulse Analytics: Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform (v${{ env.APP_VERSION }})
 
+            ### What's New in v${{ env.APP_VERSION }}
+            * **Offline Security-Word Password Recovery:** Set a private security recovery word at registration to safely reset forgotten passwords completely offline without email servers or external dependencies.
+            * **Real-Time Account Availability Check:** Instant live account verification during signup.
+            * **Unboxed 3-Pillar Decision Intelligence:** Expanded diagnostic, attribution, and projection cards with clear visual hierarchy, removing constrained borders.
+            * **Power BI Surpassing Analytics:** Gross & Net Profit/Loss breakdown with explicit loss indicators, cumulative waterfall bridge, and 1-click high-resolution PNG chart export.
+            * **Administrative Governance:** Password reset override and recovery status visibility in the Admin Portal.
+
             ### Direct 1-Click Downloads & Easy Updates
             * **Already installed?** Open the app and click **Download update → Install & relaunch** (Desktop) or **Download** (Android) from the in-app update banner — your saved local accounts and financial data stay intact.
-            * **Windows (New or Reinstall):** Download [`FinancePulseAnalytics-Windows-unsigned.zip`](https://github.com/${{ github.repository }}/releases/download/v1.0.0/FinancePulseAnalytics-Windows-unsigned.zip), unzip, and double-click `FinancePulseAnalytics.exe` (your ledger data in `%APPDATA%\FinancePulseAnalytics` is untouched).
-            * **macOS (New or Reinstall):** Download [`FinancePulseAnalytics-macOS-unsigned.zip`](https://github.com/${{ github.repository }}/releases/download/v1.0.0/FinancePulseAnalytics-macOS-unsigned.zip), unzip, and open `FinancePulseAnalytics.app`.
-            * **Android APK (Update or Install):** Download [`FinancePulseAnalytics-Android.apk`](https://github.com/${{ github.repository }}/releases/download/v1.0.0/FinancePulseAnalytics-Android.apk) and tap **Update** when prompted (Android 8.0+ / SDK 26+).
+            * **Windows (New or Reinstall):** Download [`FinancePulseAnalytics-Windows-unsigned.zip`](https://github.com/${{ github.repository }}/releases/download/v${{ env.APP_VERSION }}/FinancePulseAnalytics-Windows-unsigned.zip), unzip, and double-click `FinancePulseAnalytics.exe` (your ledger data in `%APPDATA%\FinancePulseAnalytics` is untouched).
+            * **macOS (New or Reinstall):** Download [`FinancePulseAnalytics-macOS-unsigned.zip`](https://github.com/${{ github.repository }}/releases/download/v${{ env.APP_VERSION }}/FinancePulseAnalytics-macOS-unsigned.zip), unzip, and open `FinancePulseAnalytics.app`.
+            * **Android APK (Update or Install):** Download [`FinancePulseAnalytics-Android.apk`](https://github.com/${{ github.repository }}/releases/download/v${{ env.APP_VERSION }}/FinancePulseAnalytics-Android.apk) and tap **Update** when prompted (Android 8.0+ / SDK 26+).
+
+            ### 📦 Previous Stable Releases
+            * Looking for a prior stable build? All previous versions (including [v1.0.0 Release](https://github.com/${{ github.repository }}/releases/tag/v1.0.0)) remain permanently available under [All Releases](https://github.com/${{ github.repository }}/releases).

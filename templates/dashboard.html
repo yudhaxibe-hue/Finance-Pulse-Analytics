@@ -89,12 +89,19 @@
       <section class="panel chart-panel">
         <div class="panel-head">
           <div>
-            <h2>Monthly financial performance</h2>
-            <p>Revenue, expense, and net profit across the selected period.</p>
+            <h2>Financial performance &amp; profitability intelligence</h2>
+            <p>Interactive analytics tracking revenue, expenses, gross profit, and loss variance across reporting periods.</p>
           </div>
-          <div class="chart-mode-bar" role="group" aria-label="Dashboard chart view" data-dash-modes>
-            <button type="button" class="chart-mode-btn on" data-mode="trajectory">Trajectory</button>
-            <button type="button" class="chart-mode-btn" data-mode="margin">Monthly margin %</button>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div class="chart-mode-bar" role="group" aria-label="Dashboard chart view" data-dash-modes>
+              <button type="button" class="chart-mode-btn on" data-mode="trajectory">Trajectory</button>
+              <button type="button" class="chart-mode-btn" data-mode="profit_loss">Gross &amp; Net Profit/Loss</button>
+              <button type="button" class="chart-mode-btn" data-mode="margin">Margin %</button>
+              <button type="button" class="chart-mode-btn" data-mode="waterfall">Cumulative Waterfall</button>
+            </div>
+            <button type="button" class="button secondary compact" id="btn-export-chart" title="Export high-resolution PNG chart">
+              {{ icon('download', 14) }}<span>Export PNG</span>
+            </button>
           </div>
         </div>
         <div class="chart-box">
@@ -209,6 +216,70 @@
           function renderDashChart(mode) {
             if (chart) chart.destroy();
             const cfg = window.FinancePulseCharts ? window.FinancePulseCharts.defaults() : { responsive: true, maintainAspectRatio: false };
+            const customCfg = JSON.parse(JSON.stringify(cfg));
+
+            // Custom multi-metric tooltip surpassing Power BI
+            if (!customCfg.plugins) customCfg.plugins = {};
+            customCfg.plugins.tooltip = {
+              backgroundColor: '#1D1D1F',
+              titleColor: '#FFFFFF',
+              bodyColor: '#F5F5F7',
+              padding: 12,
+              cornerRadius: 10,
+              displayColors: true,
+              callbacks: {
+                title: function(items) {
+                  return items && items.length ? 'Period: ' + items[0].label : '';
+                },
+                label: function(ctx) {
+                  const s = series[ctx.dataIndex] || {};
+                  const rev = (s.revenue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+                  const exp = (s.expense || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+                  const prof = (s.profit || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+                  const m = s.margin !== null && s.margin !== undefined ? Number(s.margin).toFixed(1) + '%' : 'N/A';
+                  if (ctx.dataset.label === 'Net profit / (loss)' || mode === 'profit_loss') {
+                    const status = (s.profit || 0) >= 0 ? 'PROFIT: +' : 'NET LOSS: -';
+                    return `${status}${Math.abs(s.profit || 0).toLocaleString()} (Rev: ${rev} | Exp: ${exp} | Margin: ${m})`;
+                  }
+                  return `${ctx.dataset.label}: ${ctx.raw ? ctx.raw.toLocaleString() : 0}`;
+                }
+              }
+            };
+
+            if (mode === 'profit_loss') {
+              chart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                  labels: series.map(s => s.period),
+                  datasets: [
+                    {
+                      label: 'Net profit / (loss)',
+                      data: series.map(s => s.profit),
+                      backgroundColor: series.map(s => (s.profit || 0) >= 0 ? 'rgba(14, 96, 39, 0.85)' : 'rgba(166, 27, 27, 0.88)'),
+                      borderColor: series.map(s => (s.profit || 0) >= 0 ? '#0E6027' : '#A61B1B'),
+                      borderWidth: 1.5,
+                      borderRadius: 6,
+                      order: 1
+                    },
+                    {
+                      type: 'line',
+                      label: 'Revenue benchmark',
+                      data: series.map(s => s.revenue),
+                      borderColor: p.cobalt,
+                      backgroundColor: 'transparent',
+                      borderWidth: 2,
+                      borderDash: [4, 4],
+                      tension: 0.25,
+                      pointRadius: 2.5,
+                      order: 0
+                    }
+                  ]
+                },
+                options: customCfg
+              });
+              return;
+            }
+
             if (mode === 'margin') {
               chart = new Chart(canvas, {
                 type: 'bar',
@@ -217,14 +288,56 @@
                   datasets: [{
                     label: 'Net margin %',
                     data: series.map(s => s.margin !== null && s.margin !== undefined ? Number(Number(s.margin).toFixed(2)) : 0),
-                    backgroundColor: series.map(s => (s.margin || 0) >= 0 ? 'rgba(14, 96, 39, 0.82)' : 'rgba(166, 27, 27, 0.82)'),
+                    backgroundColor: series.map(s => {
+                      const m = s.margin || 0;
+                      if (m >= 15) return 'rgba(14, 96, 39, 0.85)';
+                      if (m >= 0) return 'rgba(194, 89, 10, 0.85)';
+                      return 'rgba(166, 27, 27, 0.85)';
+                    }),
                     borderRadius: 6
                   }]
                 },
-                options: cfg
+                options: customCfg
               });
               return;
             }
+
+            if (mode === 'waterfall') {
+              let cumulative = 0;
+              const cumProfit = series.map(s => {
+                cumulative += (s.profit || 0);
+                return Number(cumulative.toFixed(2));
+              });
+              chart = new Chart(canvas, {
+                type: 'line',
+                data: {
+                  labels: series.map(s => s.period),
+                  datasets: [
+                    {
+                      label: 'Cumulative retained profit',
+                      data: cumProfit,
+                      borderColor: p.emerald,
+                      backgroundColor: 'rgba(14, 96, 39, 0.12)',
+                      borderWidth: 2.5,
+                      tension: 0.22,
+                      fill: true,
+                      pointRadius: 4,
+                      pointHoverRadius: 6
+                    },
+                    {
+                      type: 'bar',
+                      label: 'Monthly Net Contribution',
+                      data: series.map(s => s.profit),
+                      backgroundColor: series.map(s => (s.profit || 0) >= 0 ? 'rgba(0, 102, 204, 0.45)' : 'rgba(166, 27, 27, 0.55)'),
+                      borderRadius: 4
+                    }
+                  ]
+                },
+                options: customCfg
+              });
+              return;
+            }
+
             chart = new Chart(canvas, {
               type: 'line',
               data: {
@@ -263,7 +376,7 @@
                   }
                 ]
               },
-              options: cfg
+              options: customCfg
             });
           }
 
@@ -275,6 +388,17 @@
                 bar.querySelectorAll('.chart-mode-btn').forEach(b => b.classList.toggle('on', b === btn));
                 renderDashChart(btn.getAttribute('data-mode'));
               });
+            });
+          }
+
+          const exportBtn = document.getElementById('btn-export-chart');
+          if (exportBtn && canvas) {
+            exportBtn.addEventListener('click', function() {
+              const imageURI = canvas.toDataURL('image/png', 1.0);
+              const link = document.createElement('a');
+              link.download = 'FinancePulse_Executive_Chart.png';
+              link.href = imageURI;
+              link.click();
             });
           }
         });

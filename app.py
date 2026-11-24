@@ -379,6 +379,36 @@ def landing():
     return render_template("landing.html")
 
 
+@app.route("/api/check-availability", methods=["GET", "POST"])
+def check_account_availability():
+    email = (
+        request.args.get("email")
+        or (request.get_json(silent=True) or {}).get("email")
+        or request.form.get("email")
+        or ""
+    ).strip().lower()
+    if not email:
+        return jsonify({"available": False, "status": "empty", "message": "Email is required."}), 400
+    if "@" not in email or "." not in email.split("@")[-1] or len(email) < 5:
+        return jsonify({"available": False, "status": "invalid", "message": "Enter a valid email address."}), 200
+    conn = connect()
+    try:
+        existing = conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+        if existing:
+            return jsonify({
+                "available": False,
+                "status": "taken",
+                "message": "This email is already registered."
+            }), 200
+        return jsonify({
+            "available": True,
+            "status": "available",
+            "message": "Account email is available."
+        }), 200
+    finally:
+        conn.close()
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     # Creating an account is intentionally an account-switch action. A signed-in
@@ -391,15 +421,17 @@ def register():
         name = request.form.get("name", "").strip()
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
+        security_word = request.form.get("security_word", "").strip()
         if not name or "@" not in email or len(password) < 8:
             flash("Enter a name, valid email, and password of at least 8 characters.", "error")
         else:
             conn = connect()
             try:
                 now = datetime.utcnow().isoformat()
+                sec_hash = generate_password_hash(security_word.lower(), method="pbkdf2:sha256") if security_word else None
                 cur = conn.execute(
-                    "INSERT INTO users(name,email,password_hash,role,created_at) VALUES(?,?,?,?,?)",
-                    (name, email, generate_password_hash(password, method="pbkdf2:sha256"), "user", now),
+                    "INSERT INTO users(name,email,password_hash,role,created_at,security_word_hash) VALUES(?,?,?,?,?,?)",
+                    (name, email, generate_password_hash(password, method="pbkdf2:sha256"), "user", now, sec_hash),
                 )
                 conn.execute(
                     "INSERT INTO workspaces(owner_user_id,name,created_at) VALUES(?,?,?)",
@@ -418,6 +450,46 @@ def register():
             finally:
                 conn.close()
     return render_template("auth.html", mode="register")
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if g.user:
+        clear_auth_session()
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        security_word = request.form.get("security_word", "").strip()
+        new_password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if not email or not security_word or not new_password:
+            flash("Enter your registered email, security recovery word, and new password.", "error")
+        elif len(new_password) < 8:
+            flash("New password must be at least 8 characters.", "error")
+        elif new_password != confirm_password:
+            flash("New password and confirmation do not match.", "error")
+        else:
+            conn = connect()
+            try:
+                user = conn.execute("SELECT * FROM users WHERE email=? AND status='active'", (email,)).fetchone()
+                if not user:
+                    flash("No active account found for that email address.", "error")
+                elif not user["security_word_hash"]:
+                    flash("This account does not have an offline security word set. Please contact an administrator.", "error")
+                elif not check_password_hash(user["security_word_hash"], security_word.lower()):
+                    flash("Incorrect security word. Please verify the secret recovery word you entered when registering.", "error")
+                else:
+                    conn.execute(
+                        "UPDATE users SET password_hash=? WHERE id=?",
+                        (generate_password_hash(new_password, method="pbkdf2:sha256"), user["id"]),
+                    )
+                    conn.commit()
+                    audit("password_reset_offline", f"User {email} reset password offline via security word", user_id=user["id"])
+                    flash("Your password has been successfully reset. You can now sign in with your new password.", "success")
+                    return redirect(url_for("user_login"))
+            finally:
+                conn.close()
+    return render_template("auth.html", mode="forgot_password")
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1326,6 +1398,27 @@ def admin_toggle_user_status(user_id):
     conn.close()
     audit("user_status_changed", f"{target_user['email']} -> {new_status}")
     flash(f"Updated status for {target_user['email']} to {new_status}.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])
+@admin_required
+def admin_reset_user_password(user_id):
+    conn = connect()
+    target_user = conn.execute("SELECT id, email FROM users WHERE id=?", (user_id,)).fetchone()
+    if not target_user:
+        conn.close()
+        flash("Account not found.", "error")
+        return redirect(url_for("admin_users"))
+    temp_pass = "ResetPass@2026"
+    conn.execute(
+        "UPDATE users SET password_hash=? WHERE id=?",
+        (generate_password_hash(temp_pass, method="pbkdf2:sha256"), user_id),
+    )
+    conn.commit()
+    conn.close()
+    audit("admin_reset_user_password", f"Admin reset password for {target_user['email']}")
+    flash(f"Password for {target_user['email']} reset to temporary password: {temp_pass}", "success")
     return redirect(url_for("admin_users"))
 
 

@@ -24,6 +24,7 @@ class User(Base):
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
     created_at: Mapped[str] = mapped_column(String(64), nullable=False)
     last_activity_at: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    security_word_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 
 class Workspace(Base):

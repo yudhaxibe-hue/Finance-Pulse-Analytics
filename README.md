@@ -18,10 +18,10 @@ A local-first enterprise financial performance intelligence and profitability op
 
 | Operating System | Direct 1-Click Download | How to Run |
 | :--- | :--- | :--- |
-| **🪟 Windows 10 / 11** | [**📥 Download for Windows (.zip)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/download/v1.0.0/FinancePulseAnalytics-Windows-unsigned.zip) | **1.** Extract the downloaded `.zip` folder.<br>**2.** Double-click **`FinancePulseAnalytics.exe`**.<br>*Opens natively without terminal windows or Python setup.* |
-| **🍎 macOS (Apple Silicon & Intel)** | [**📥 Download for macOS (.zip)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/download/v1.0.0/FinancePulseAnalytics-macOS-unsigned.zip) | **1.** Extract the `.zip` archive.<br>**2.** Open **`FinancePulseAnalytics.app`**.<br>*(First launch of an unsigned build: right-click -> **Open**).* |
-| **🤖 Android (8.0+ / SDK 26–34)** | [**📥 Download Android APK (.apk)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/download/v1.0.0/FinancePulseAnalytics-Android.apk) | **1.** Open **`FinancePulseAnalytics-Android.apk`** on Android.<br>**2.** Runs 100% offline with bundled Chart.js & sample CSV and supports automatic wireless updates. |
-| **📦 GitHub Releases Hub** | [**🔗 View All Releases & SHA-256 Checksums**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/latest) | Official release artifacts with SHA-256 checksums built automatically by GitHub Actions. |
+| **🪟 Windows 10 / 11** | [**📥 Download for Windows (.zip)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/latest/download/FinancePulseAnalytics-Windows-unsigned.zip) | **1.** Extract the downloaded `.zip` folder.<br>**2.** Double-click **`FinancePulseAnalytics.exe`**.<br>*Opens natively without terminal windows or Python setup.* |
+| **🍎 macOS (Apple Silicon & Intel)** | [**📥 Download for macOS (.zip)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/latest/download/FinancePulseAnalytics-macOS-unsigned.zip) | **1.** Extract the `.zip` archive.<br>**2.** Open **`FinancePulseAnalytics.app`**.<br>*(First launch of an unsigned build: right-click -> **Open**).* |
+| **🤖 Android (8.0+ / SDK 26–34)** | [**📥 Download Android APK (.apk)**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/latest/download/FinancePulseAnalytics-Android.apk) | **1.** Open **`FinancePulseAnalytics-Android.apk`** on Android.<br>**2.** Runs 100% offline with bundled Chart.js & sample CSV and supports automatic wireless updates. |
+| **📦 GitHub Releases Hub** | [**🔗 View All Releases & Historical Builds**](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases) | Official release artifacts with SHA-256 checksums. Prior versions (including [v1.0.0](https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/tag/v1.0.0)) remain permanently available. |
 
 ---
 

@@ -30,6 +30,7 @@
         <li>{{ icon('shield', 16) }}<span>Regular accounts register only from the User Portal and cannot elevate roles.</span></li>
         <li>{{ icon('check', 16) }}<span>Each account is assigned an isolated workspace for datasets and scenarios.</span></li>
         <li>{{ icon('check', 16) }}<span>Passwords require at least 8 characters and are hashed with PBKDF2-SHA256.</span></li>
+        <li>{{ icon('key', 16) }}<span>Offline password recovery supported via secret recovery phrase with zero external API dependencies.</span></li>
       </ul>
     </article>
   </section>
@@ -51,6 +52,7 @@
             <th>Datasets</th>
             <th>Records</th>
             <th>Status</th>
+            <th>Recovery</th>
             <th>Governance</th>
           </tr>
         </thead>
@@ -64,14 +66,28 @@
               <td>{{ user.record_count }}</td>
               <td><span class="badge {{ 'positive' if user.status == 'active' else 'negative' }}">{{ user.status }}</span></td>
               <td>
+                {% if user.security_word_hash %}
+                  <span class="badge positive" title="Secret security recovery word is configured">Configured</span>
+                {% else %}
+                  <span class="badge" title="No recovery word configured">None</span>
+                {% endif %}
+              </td>
+              <td>
                 {% if current_user and user.id == current_user['id'] %}
                   <span class="muted">Current session</span>
                 {% else %}
-                  <form method="post" action="{{ url_for('admin_toggle_user_status', user_id=user.id) }}" class="inline-action">
-                    <button class="button secondary compact" type="submit">
-                      {{ 'Suspend' if user.status == 'active' else 'Activate' }}
-                    </button>
-                  </form>
+                  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <form method="post" action="{{ url_for('admin_toggle_user_status', user_id=user.id) }}" class="inline-action">
+                      <button class="button secondary compact" type="submit">
+                        {{ 'Suspend' if user.status == 'active' else 'Activate' }}
+                      </button>
+                    </form>
+                    <form method="post" action="{{ url_for('admin_reset_user_password', user_id=user.id) }}" class="inline-action" onsubmit="return confirm('Reset password for {{ user.email }} to temporary password: ResetPass@2026?');">
+                      <button class="button secondary compact" type="submit" title="Reset user password">
+                        Reset
+                      </button>
+                    </form>
+                  </div>
                 {% endif %}
               </td>
             </tr>

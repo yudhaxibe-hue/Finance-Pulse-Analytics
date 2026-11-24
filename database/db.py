@@ -59,7 +59,8 @@ def initialize():
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user','admin')),
-      status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, last_activity_at TEXT
+      status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, last_activity_at TEXT,
+      security_word_hash TEXT
     );
     CREATE TABLE IF NOT EXISTS workspaces (
       id INTEGER PRIMARY KEY, owner_user_id INTEGER, name TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -77,6 +78,7 @@ def initialize():
     _add_column(conn, "imports", "workspace_id INTEGER")
     _add_column(conn, "imports", "file_type TEXT")
     _add_column(conn, "imports", "status TEXT NOT NULL DEFAULT 'imported'")
+    _add_column(conn, "users", "security_word_hash TEXT")
 
     # 26 enterprise fields + ML classification & anomaly columns (non-destructive upgrades)
     _add_column(conn, "financial_transactions", "workspace_id INTEGER")

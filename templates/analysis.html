@@ -35,31 +35,36 @@
           <h2>{{ head_pair[0] }}</h2>
           <p>{{ head_pair[1] }}</p>
         </div>
-        <div class="chart-mode-bar" role="group" aria-label="Chart visualization mode" data-analysis-modes>
-          {% if view == 'overview' %}
-            <button type="button" class="chart-mode-btn on" data-mode="combo">Cashflow vs. profit</button>
-            <button type="button" class="chart-mode-btn" data-mode="cumulative">Cumulative profit</button>
-            <button type="button" class="chart-mode-btn" data-mode="margin">Monthly margin %</button>
-          {% elif view == 'anomalies' %}
-            <button type="button" class="chart-mode-btn on" data-mode="threshold_fence">Outlier vs. cutoff</button>
-            <button type="button" class="chart-mode-btn" data-mode="excess">Excess above cutoff</button>
-          {% elif view == 'categories' %}
-            <button type="button" class="chart-mode-btn on" data-mode="share">Profit share</button>
-            <button type="button" class="chart-mode-btn" data-mode="margin_hbar">Margin %</button>
-            <button type="button" class="chart-mode-btn" data-mode="comparison">Revenue vs. profit</button>
-          {% elif view == 'products' %}
-            <button type="button" class="chart-mode-btn on" data-mode="margin_hbar">Margin % ranking</button>
-            <button type="button" class="chart-mode-btn" data-mode="hbar_rev_profit">Revenue vs. profit</button>
-            <button type="button" class="chart-mode-btn" data-mode="share">Profit share</button>
-          {% elif view == 'departments' %}
-            <button type="button" class="chart-mode-btn on" data-mode="rev_exp_prof">Revenue, expense &amp; profit</button>
-            <button type="button" class="chart-mode-btn" data-mode="margin_hbar">Margin %</button>
-            <button type="button" class="chart-mode-btn" data-mode="share">Profit share</button>
-          {% else %}
-            <button type="button" class="chart-mode-btn on" data-mode="hbar_rev_profit">Revenue vs. profit</button>
-            <button type="button" class="chart-mode-btn" data-mode="margin_hbar">Margin %</button>
-            <button type="button" class="chart-mode-btn" data-mode="share">Profit share</button>
-          {% endif %}
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <div class="chart-mode-bar" role="group" aria-label="Chart visualization mode" data-analysis-modes>
+            {% if view == 'overview' %}
+              <button type="button" class="chart-mode-btn on" data-mode="combo">Cashflow vs. profit</button>
+              <button type="button" class="chart-mode-btn" data-mode="cumulative">Cumulative profit</button>
+              <button type="button" class="chart-mode-btn" data-mode="margin">Monthly margin %</button>
+            {% elif view == 'anomalies' %}
+              <button type="button" class="chart-mode-btn on" data-mode="threshold_fence">Outlier vs. cutoff</button>
+              <button type="button" class="chart-mode-btn" data-mode="excess">Excess above cutoff</button>
+            {% elif view == 'categories' %}
+              <button type="button" class="chart-mode-btn on" data-mode="share">Profit share</button>
+              <button type="button" class="chart-mode-btn" data-mode="margin_hbar">Margin %</button>
+              <button type="button" class="chart-mode-btn" data-mode="comparison">Revenue vs. profit</button>
+            {% elif view == 'products' %}
+              <button type="button" class="chart-mode-btn on" data-mode="margin_hbar">Margin % ranking</button>
+              <button type="button" class="chart-mode-btn" data-mode="hbar_rev_profit">Revenue vs. profit</button>
+              <button type="button" class="chart-mode-btn" data-mode="share">Profit share</button>
+            {% elif view == 'departments' %}
+              <button type="button" class="chart-mode-btn on" data-mode="rev_exp_prof">Revenue, expense &amp; profit</button>
+              <button type="button" class="chart-mode-btn" data-mode="margin_hbar">Margin %</button>
+              <button type="button" class="chart-mode-btn" data-mode="share">Profit share</button>
+            {% else %}
+              <button type="button" class="chart-mode-btn on" data-mode="hbar_rev_profit">Revenue vs. profit</button>
+              <button type="button" class="chart-mode-btn" data-mode="margin_hbar">Margin %</button>
+              <button type="button" class="chart-mode-btn" data-mode="share">Profit share</button>
+            {% endif %}
+          </div>
+          <button type="button" class="button secondary compact" id="btn-export-analysis-chart" title="Export high-resolution PNG chart">
+            {{ icon('download', 14) }}<span>Export PNG</span>
+          </button>
         </div>
       </div>
       <div class="chart-box compact">
@@ -407,6 +412,17 @@
               modeBar.querySelectorAll('.chart-mode-btn').forEach(b => b.classList.toggle('on', b === btn));
               renderAnalysisChart(btn.getAttribute('data-mode'));
             });
+          });
+        }
+
+        const expBtn = document.getElementById('btn-export-analysis-chart');
+        if (expBtn && canvas) {
+          expBtn.addEventListener('click', function() {
+            const imageURI = canvas.toDataURL('image/png', 1.0);
+            const link = document.createElement('a');
+            link.download = `FinancePulse_${view}_Analysis.png`;
+            link.href = imageURI;
+            link.click();
           });
         }
       });

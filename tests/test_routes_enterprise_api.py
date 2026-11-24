@@ -308,3 +308,167 @@ class TestCopilotEndpointsPowerBiApiAndAdminBackups:
         # Traversal or non-matching filename returns 404
         assert admin.get("/admin/backups/download/..%2F..%2Fetc%2Fpasswd").status_code == 404
         assert admin.get("/admin/backups/download/invalid_name.txt").status_code == 404
+
+    def test_account_availability_endpoint(self, isolated_env):
+        c = app.app.test_client()
+
+        # Empty email returns 400
+        r_empty = c.get("/api/check-availability")
+        assert r_empty.status_code == 400
+        assert r_empty.get_json()["available"] is False
+
+        # Malformed email
+        r_invalid = c.get("/api/check-availability?email=notanemail")
+        assert r_invalid.status_code == 200
+        assert r_invalid.get_json()["status"] == "invalid"
+        assert r_invalid.get_json()["available"] is False
+
+        # Available email
+        r_avail = c.get("/api/check-availability?email=unique_person@test.local")
+        assert r_avail.status_code == 200
+        assert r_avail.get_json()["status"] == "available"
+        assert r_avail.get_json()["available"] is True
+
+        # Register that email
+        c.post(
+            "/register",
+            data={
+                "name": "Unique User",
+                "email": "unique_person@test.local",
+                "password": "strongpassword123",
+                "security_word": "quantum",
+            },
+            follow_redirects=True,
+        )
+
+        # Now it is taken
+        r_taken = c.get("/api/check-availability?email=unique_person@test.local")
+        assert r_taken.status_code == 200
+        assert r_taken.get_json()["status"] == "taken"
+        assert r_taken.get_json()["available"] is False
+
+    def test_offline_security_word_password_recovery_flow(self, isolated_env):
+        c = app.app.test_client()
+
+        # 1. Register with a user-defined security recovery word
+        email = "recover_me@test.local"
+        reg = c.post(
+            "/register",
+            data={
+                "name": "Recovery User",
+                "email": email,
+                "password": "old_password_123",
+                "security_word": "BlueFalcon",
+            },
+            follow_redirects=True,
+        )
+        assert reg.status_code == 200
+
+        # Log out
+        c.get("/logout", follow_redirects=True)
+
+        # 2. GET /forgot-password
+        get_fp = c.get("/forgot-password")
+        assert get_fp.status_code == 200
+        assert b"Reset password offline" in get_fp.data
+
+        # 3. Non-existent account
+        r_none = c.post(
+            "/forgot-password",
+            data={
+                "email": "unknown@test.local",
+                "security_word": "BlueFalcon",
+                "password": "new_password_123",
+                "confirm_password": "new_password_123",
+            },
+            follow_redirects=True,
+        )
+        assert b"No active account found" in r_none.data
+
+        # 4. Incorrect security word
+        r_wrong_word = c.post(
+            "/forgot-password",
+            data={
+                "email": email,
+                "security_word": "WrongWord",
+                "password": "new_password_123",
+                "confirm_password": "new_password_123",
+            },
+            follow_redirects=True,
+        )
+        assert b"Incorrect security word" in r_wrong_word.data
+
+        # 5. Mismatching confirmation password
+        r_mismatch = c.post(
+            "/forgot-password",
+            data={
+                "email": email,
+                "security_word": "bluefalcon",
+                "password": "new_password_123",
+                "confirm_password": "different_pass_123",
+            },
+            follow_redirects=True,
+        )
+        assert b"confirmation do not match" in r_mismatch.data
+
+        # 6. Correct security word & valid new password (case-insensitive recovery phrase)
+        r_success = c.post(
+            "/forgot-password",
+            data={
+                "email": email,
+                "security_word": "bluefalcon",
+                "password": "brand_new_secret_password_123",
+                "confirm_password": "brand_new_secret_password_123",
+            },
+            follow_redirects=True,
+        )
+        assert r_success.status_code == 200
+        assert b"password has been successfully reset" in r_success.data
+
+        # 7. Old password no longer works
+        old_login = c.post("/login", data={"email": email, "password": "old_password_123"}, follow_redirects=True)
+        assert b"Invalid user email or password" in old_login.data
+
+        # 8. New password logs in smoothly
+        new_login = c.post("/login", data={"email": email, "password": "brand_new_secret_password_123"}, follow_redirects=True)
+        assert new_login.status_code == 200
+        assert b"Recovery User" in new_login.data or b"Dashboard" in new_login.data
+
+    def test_admin_reset_user_password_and_security_status(self, isolated_env):
+        user_c = _register_user(app.app.test_client(), email="managed@test.local")
+        user_c.get("/logout")
+
+        # Non-admin cannot invoke reset
+        assert user_c.post("/admin/users/1/reset-password").status_code == 302
+
+        admin = _make_admin_client()
+        users_page = admin.get("/admin/users")
+        assert users_page.status_code == 200
+        assert b"Recovery" in users_page.data
+
+        # Reset user password to temp password
+        reset_res = admin.post("/admin/users/1/reset-password", follow_redirects=True)
+        assert reset_res.status_code == 200
+        assert b"ResetPass@2026" in reset_res.data
+
+        # User logs in with ResetPass@2026
+        login_res = app.app.test_client().post(
+            "/login",
+            data={"email": "ent@example.com", "password": "ResetPass@2026"},
+            follow_redirects=True,
+        )
+        assert login_res.status_code == 200
+        assert b"Dashboard" in login_res.data or b"Workspace" in login_res.data
+
+    def test_three_pillar_and_chart_reporting_enhancements(self, isolated_env):
+        c = _register_user(app.app.test_client())
+        c.post("/user/load-enterprise-sample", follow_redirects=True)
+        dash = c.get("/user/dashboard")
+        assert dash.status_code == 200
+        # 3-pillar unboxed classes and badges
+        assert b"3-Pillar Decision Intelligence" in dash.data
+        assert b"pillar-card" in dash.data
+        # Enhanced Power BI surpassing controls
+        assert b"Gross &amp; Net Profit/Loss" in dash.data
+        assert b"btn-export-chart" in dash.data
+        assert b"Cumulative Waterfall" in dash.data
