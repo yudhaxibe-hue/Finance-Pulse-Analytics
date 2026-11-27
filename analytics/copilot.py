@@ -508,24 +508,43 @@ def answer_question(
             return {"ok": True, "tool": tool, "language": lang, "model": "SQLite Aggregator", "title": "Segments", "answer": "No segment data found.", "metrics": [], "actions": [], "suggestions": []}
         top_r = rows[0]
         low_r = rows[-1]
+        dim_plural = "Categories" if dim == "category" else f"{dim.title()}s"
+        top_margin = top_r["margin"] if top_r["margin"] is not None else "N/A"
+        if lang == "ta":
+            ans_text = (
+                f"{len(rows)} {dim_plural.lower()} பிரிவுகளில், '{top_r[dim]}' {_money(top_r['profit'], currency)} "
+                f"நிகர இருப்பில் முன்னணியில் உள்ளது ({top_margin}%). "
+                f"அதிக செலவு/குறைந்த பங்களிப்பு '{low_r[dim]}' ({_money(low_r['profit'], currency)})."
+            )
+            title_text = f"முன்னணி & குறைந்த {dim_plural}"
+        elif lang == "hi":
+            ans_text = (
+                f"{len(rows)} {dim_plural.lower()} में, '{top_r[dim]}' {_money(top_r['profit'], currency)} "
+                f"शुद्ध योगदान के साथ शीर्ष पर है ({top_margin}%)। "
+                f"सबसे कम योगदान '{low_r[dim]}' ({_money(low_r['profit'], currency)}) का है।"
+            )
+            title_text = f"शीर्ष और निम्न {dim_plural}"
+        else:
+            ans_text = (
+                f"Across {len(rows)} {dim_plural.lower()}, '{top_r[dim]}' led with {_money(top_r['profit'], currency)} net "
+                f"({top_margin}% margin). "
+                f"Lowest net contributor was '{low_r[dim]}' at {_money(low_r['profit'], currency)}."
+            )
+            title_text = "Top & Bottom Category Breakdown" if dim == "category" else f"Top & Bottom {dim_plural}"
         return {
             "ok": True,
             "tool": tool,
             "language": lang,
             "model": "Offline SQLite Dimensional Ranker",
-            "title": f"Top & Bottom {dim.title()}s",
-            "answer": (
-                f"Across {len(rows)} {dim}(s), '{top_r[dim]}' led with {_money(top_r['profit'], currency)} profit "
-                f"({top_r['margin'] if top_r['margin'] is not None else 'N/A'}% margin). "
-                f"Lowest net contributor was '{low_r[dim]}' at {_money(low_r['profit'], currency)}."
-            ),
+            "title": title_text,
+            "answer": ans_text,
             "metrics": [
                 {"label": f"Top {dim.title()}", "value": str(top_r[dim])[:26]},
-                {"label": "Leader Profit", "value": _money(top_r["profit"], currency)},
+                {"label": "Leader Net", "value": _money(top_r["profit"], currency)},
                 {"label": f"Lowest {dim.title()}", "value": str(low_r[dim])[:26]},
-                {"label": "Laggard Profit", "value": _money(low_r["profit"], currency)},
+                {"label": "Lowest Net", "value": _money(low_r["profit"], currency)},
             ],
-            "actions": [f"Review cost allocations or pricing on '{low_r[dim]}'"],
+            "actions": [f"Review cost allocations or spending on '{low_r[dim]}'"],
             "suggestions": ["Compare Regions", "Show anomaly audit", "Target 25% profit margin plan"],
         }
 

@@ -12,7 +12,7 @@
   <script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
   <script defer src="{{ url_for('static', filename='js/ui.js') }}"></script>
 </head>
-<body class="app-shell">
+<body class="app-shell" data-audit-mode="{{ persona.mode if persona else 'enterprise' }}" data-mode-override="{{ audit_mode_override or 'auto' }}">
   <div class="drawer-backdrop" aria-hidden="true"></div>
 
   <aside class="app-sidebar" id="app-sidebar" aria-label="Workspace navigation">
@@ -53,36 +53,69 @@
         </a>
       </nav>
     {% else %}
-      <nav class="app-nav">
+      <nav class="app-nav" id="userNav">
         <a class="{{ 'on' if active=='user_dashboard' else '' }}" href="{{ url_for('user_dashboard') }}">
           {{ icon('dashboard', 16) }}<span>Dashboard</span>
         </a>
-        <div class="nav-group">Analysis</div>
-        <a class="{{ 'on' if active=='user_analytics' and view=='overview' else '' }}" href="{{ url_for('user_analytics', view='overview') }}">
-          {{ icon('overview', 16) }}<span>Financial Overview</span>
-        </a>
-        <a class="{{ 'on' if active=='user_analytics' and view=='products' else '' }}" href="{{ url_for('user_analytics', view='products') }}">
-          {{ icon('products', 16) }}<span>Product Analysis</span>
-        </a>
-        <a class="{{ 'on' if active=='user_analytics' and view=='departments' else '' }}" href="{{ url_for('user_analytics', view='departments') }}">
-          {{ icon('departments', 16) }}<span>Department Analysis</span>
-        </a>
-        <a class="{{ 'on' if active=='user_analytics' and view=='categories' else '' }}" href="{{ url_for('user_analytics', view='categories') }}">
-          {{ icon('categories', 16) }}<span>Category Analysis</span>
-        </a>
-        <a class="{{ 'on' if active=='user_analytics' and view=='regions' else '' }}" href="{{ url_for('user_analytics', view='regions') }}">
-          {{ icon('regions', 16) }}<span>Region Analysis</span>
-        </a>
-        <a class="{{ 'on' if active=='user_analytics' and view=='anomalies' else '' }}" href="{{ url_for('user_analytics', view='anomalies') }}">
-          {{ icon('anomalies', 16) }}<span>Potential Anomalies</span>
-        </a>
-        <div class="nav-group">Planning</div>
-        <a class="{{ 'on' if active=='user_forecasting' else '' }}" href="{{ url_for('user_forecasting') }}">
-          {{ icon('forecasting', 16) }}<span>Forecasting</span>
-        </a>
-        <a class="{{ 'on' if active=='user_optimization' else '' }}" href="{{ url_for('user_optimization') }}">
-          {{ icon('optimization', 16) }}<span>What-if &amp; Optimization</span>
-        </a>
+
+        <div class="nav-mode-section" data-mode-nav="personal">
+          <div class="nav-group">Personal Audit</div>
+          <a class="{{ 'on' if active=='user_analytics' and view=='overview' else '' }}" href="{{ url_for('user_analytics', view='overview') }}">
+            {{ icon('overview', 16) }}<span>Monthly Cashflow</span>
+          </a>
+          <a class="{{ 'on' if active=='user_analytics' and view=='categories' else '' }}" href="{{ url_for('user_analytics', view='categories') }}">
+            {{ icon('categories', 16) }}<span>Categories</span>
+          </a>
+          <a class="{{ 'on' if active=='user_analytics' and view=='subcategories' else '' }}" href="{{ url_for('user_analytics', view='subcategories') }}">
+            {{ icon('products', 16) }}<span>Sub-Categories</span>
+          </a>
+          <a class="{{ 'on' if active=='user_analytics' and view=='payees' else '' }}" href="{{ url_for('user_analytics', view='payees') }}">
+            {{ icon('users', 16) }}<span>Merchants &amp; Payees</span>
+          </a>
+          <a class="{{ 'on' if active=='user_analytics' and view=='budget' else '' }}" href="{{ url_for('user_analytics', view='budget') }}">
+            {{ icon('departments', 16) }}<span>50/30/20 Budget</span>
+          </a>
+          <a class="{{ 'on' if active=='user_analytics' and view=='anomalies' else '' }}" href="{{ url_for('user_analytics', view='anomalies') }}">
+            {{ icon('anomalies', 16) }}<span>Spending Spikes</span>
+          </a>
+          <div class="nav-group">Planning</div>
+          <a class="{{ 'on' if active=='user_forecasting' else '' }}" href="{{ url_for('user_forecasting') }}">
+            {{ icon('forecasting', 16) }}<span>Cashflow Forecast</span>
+          </a>
+          <a class="{{ 'on' if active=='user_optimization' else '' }}" href="{{ url_for('user_optimization') }}">
+            {{ icon('optimization', 16) }}<span>Budget Scenarios</span>
+          </a>
+        </div>
+
+        <div class="nav-mode-section" data-mode-nav="enterprise">
+          <div class="nav-group">Analysis</div>
+          <a class="{{ 'on' if active=='user_analytics' and view=='overview' else '' }}" href="{{ url_for('user_analytics', view='overview') }}">
+            {{ icon('overview', 16) }}<span>Financial Overview</span>
+          </a>
+          <a class="{{ 'on' if active=='user_analytics' and view=='products' else '' }}" href="{{ url_for('user_analytics', view='products') }}">
+            {{ icon('products', 16) }}<span>Product Analysis</span>
+          </a>
+          <a class="{{ 'on' if active=='user_analytics' and view=='departments' else '' }}" href="{{ url_for('user_analytics', view='departments') }}">
+            {{ icon('departments', 16) }}<span>Department Analysis</span>
+          </a>
+          <a class="{{ 'on' if active=='user_analytics' and view=='categories' else '' }}" href="{{ url_for('user_analytics', view='categories') }}">
+            {{ icon('categories', 16) }}<span>Category Analysis</span>
+          </a>
+          <a class="{{ 'on' if active=='user_analytics' and view=='regions' else '' }}" href="{{ url_for('user_analytics', view='regions') }}">
+            {{ icon('regions', 16) }}<span>Region Analysis</span>
+          </a>
+          <a class="{{ 'on' if active=='user_analytics' and view=='anomalies' else '' }}" href="{{ url_for('user_analytics', view='anomalies') }}">
+            {{ icon('anomalies', 16) }}<span>Potential Anomalies</span>
+          </a>
+          <div class="nav-group">Planning</div>
+          <a class="{{ 'on' if active=='user_forecasting' else '' }}" href="{{ url_for('user_forecasting') }}">
+            {{ icon('forecasting', 16) }}<span>Forecasting</span>
+          </a>
+          <a class="{{ 'on' if active=='user_optimization' else '' }}" href="{{ url_for('user_optimization') }}">
+            {{ icon('optimization', 16) }}<span>What-if &amp; Optimization</span>
+          </a>
+        </div>
+
         <div class="nav-group">Data</div>
         <a class="{{ 'on' if active=='user_data' else '' }}" href="{{ url_for('user_data') }}">
           {{ icon('data', 16) }}<span>Import &amp; My Data</span>
@@ -91,6 +124,16 @@
     {% endif %}
 
     <div class="sidebottom">
+      {% if portal != 'admin' %}
+        <div class="sidebar-mode-wrap">
+          <span class="sidebar-mode-label">Workspace mode</span>
+          <div class="mode-segmented" role="group" aria-label="Workspace mode" data-mode-switcher>
+            <button type="button" class="mode-seg-btn {{ 'on' if audit_mode_override=='auto' else '' }}" data-set-mode="auto">Auto</button>
+            <button type="button" class="mode-seg-btn {{ 'on' if audit_mode_override=='personal' else '' }}" data-set-mode="personal">Personal</button>
+            <button type="button" class="mode-seg-btn {{ 'on' if audit_mode_override=='enterprise' else '' }}" data-set-mode="enterprise">Enterprise</button>
+          </div>
+        </div>
+      {% endif %}
       {% set uname = current_user['name'] if current_user else '' %}
       {% if uname %}
         <div class="account-pill">
@@ -121,7 +164,7 @@
         <div class="title-block">
           <h1>{% block title %}Dashboard{% endblock %}</h1>
           <div class="header-meta">
-            <span>{{ 'System management, governance & audit trail' if portal=='admin' else 'Enterprise financial performance & profitability analytics' }}</span>
+            <span id="headerSubtitle">{{ 'System management, governance & audit trail' if portal=='admin' else ('Personal & household cashflow intelligence' if persona and persona.mode=='personal' else 'Enterprise financial performance & profitability analytics') }}</span>
             <span class="currency-pill">{{ currency }}</span>
           </div>
         </div>

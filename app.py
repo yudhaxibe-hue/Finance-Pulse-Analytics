@@ -348,13 +348,54 @@ def add_sync_cors_headers(response):
     return response
 
 
+def _resolve_active_persona(df):
+    auto_p = detect_audit_persona(df)
+    override = session.get("audit_mode_override", "auto")
+    if override not in ("personal", "enterprise"):
+        override = "auto"
+    if override == "auto":
+        auto_p["override"] = "auto"
+        return auto_p
+    if override == "personal":
+        return {
+            "mode": "personal",
+            "type_label": "Audit Mode: Personal & Household Ledger",
+            "confidence": auto_p.get("confidence", 0.99) if auto_p.get("mode") == "personal" else 1.0,
+            "income_label": "Total Inflow / Monthly Salary",
+            "expense_label": "Living & Lifestyle Expenses",
+            "profit_label": "Net Surplus & Retained Cash",
+            "margin_label": "Savings & Retention Rate",
+            "reasons": auto_p.get("reasons", []) if auto_p.get("mode") == "personal" else ["Manually switched to Personal & Household Ledger mode"],
+            "override": "personal",
+        }
+    return {
+        "mode": "enterprise",
+        "type_label": "Audit Mode: Corporate P&L",
+        "confidence": auto_p.get("confidence", 0.99) if auto_p.get("mode") == "enterprise" else 1.0,
+        "income_label": "Gross Revenue",
+        "expense_label": "Operating Expenses (OPEX)",
+        "profit_label": "Operating Profit (EBITDA)",
+        "margin_label": "Operating Margin %",
+        "reasons": auto_p.get("reasons", []) if auto_p.get("mode") == "enterprise" else ["Manually switched to Corporate P&L mode"],
+        "override": "enterprise",
+    }
+
+
 @app.context_processor
 def context():
+    active_persona = None
+    if g.user and g.user["role"] != "admin":
+        try:
+            active_persona = _resolve_active_persona(data_frame())
+        except Exception:
+            active_persona = None
     return {
         "currency": settings().get("currency", "INR"),
         "active": request.endpoint or "",
         "current_user": g.user,
         "is_admin": bool(g.user and g.user["role"] == "admin"),
+        "persona": active_persona,
+        "audit_mode_override": session.get("audit_mode_override", "auto"),
         "app_name": config.APP_NAME,
         "app_subtitle": config.APP_SUBTITLE,
         "app_title": config.APP_TITLE,
@@ -523,7 +564,78 @@ def logout():
     audit("logout")
     clear_auth_session()
     flash("You have been signed out.", "success")
-    return redirect(url_for("landing"))
+    return redirect(url_for("user_login"))
+
+
+@app.route("/api/workspace/mode", methods=["POST"])
+@login_required
+def api_workspace_mode():
+    payload = request.get_json(silent=True) or {}
+    mode_req = str(payload.get("mode") or "auto").strip().lower()
+    if mode_req not in ("auto", "personal", "enterprise"):
+        return jsonify({"ok": False, "error": "Invalid mode"}), 400
+    session["audit_mode_override"] = mode_req
+
+    ws_id = workspace_id()
+    raw_df = raw_data_frame(ws_id)
+    # Apply optional query filters passed from dashboard
+    filters = payload.get("filters") or {}
+    df = raw_df.copy()
+    if not df.empty:
+        start = filters.get("start")
+        end = filters.get("end")
+        year = filters.get("year")
+        region = filters.get("region")
+        department = filters.get("department")
+        if start:
+            df = df[df.txn_date >= pd.to_datetime(start)]
+        if end:
+            df = df[df.txn_date <= pd.to_datetime(end)]
+        if year and "fiscal_year" in df:
+            try:
+                df = df[df["fiscal_year"] == int(year)]
+            except (TypeError, ValueError):
+                pass
+        if region and "region" in df:
+            df = df[df["region"] == region]
+        if department and "department" in df:
+            df = df[df["department"] == department]
+
+    cfg = settings()
+    curr = cfg.get("currency", "INR")
+    margin_threshold = _setting_float(cfg, "margin_threshold", 15.0, min_val=0.0, max_val=100.0)
+    persona = _resolve_active_persona(df)
+    m = metrics(df)
+    series = monthly(df)
+    series_rows = fmt_rows(series.assign(period=series.period.dt.strftime("%Y-%m")).to_dict("records"))
+    budget_rule = budget_50_30_20(df) if persona.get("mode") == "personal" else None
+    brief = overview_narrative(df, series_rows, margin_threshold, curr)
+    insights = []
+    if len(series) >= 2:
+        rg, eg = period_growth(series.revenue), period_growth(series.expense)
+        if rg is not None:
+            inc_word = "Income" if persona["mode"] == "personal" else "Revenue"
+            insights.append(f"{inc_word} {'increased' if rg >= 0 else 'declined'} {abs(rg):.1f}% compared with the previous month.")
+        if eg is not None and rg is not None and eg > rg:
+            insights.append(f"Expenses increased faster than {'income' if persona['mode'] == 'personal' else 'revenue'} during the latest period.")
+    lead_dim = "category" if persona["mode"] == "personal" else "department"
+    dim_rows = [r for r in by_dimension(df, lead_dim) if str(r.get(lead_dim) or "").strip() not in ("", "Unassigned")]
+    if dim_rows:
+        if persona["mode"] == "personal":
+            top_spend = max(dim_rows, key=lambda r: float(r.get("expense") or 0.0))
+            insights.append(f"{top_spend['category']} is your highest living expense category ({curr} {top_spend['expense']:,.0f}).")
+        else:
+            insights.append(f"{dim_rows[0]['department']} currently contributes the highest net profit.")
+
+    return jsonify({
+        "ok": True,
+        "persona": persona,
+        "metrics": m,
+        "budget_rule": budget_rule,
+        "brief": brief,
+        "insights": insights,
+        "series": series_rows,
+    })
 
 
 @app.route("/user")
@@ -543,17 +655,23 @@ def user_dashboard():
     ml_info = ml_summary(df)
     runway = compute_cashflow_runway(df)
     ml_brief = ml_insights_narrative(ml_info, runway, curr)
+    persona = _resolve_active_persona(df)
     insights = []
     if len(series) >= 2:
         rg, eg = period_growth(series.revenue), period_growth(series.expense)
         if rg is not None:
-            insights.append(f"Revenue {'increased' if rg >= 0 else 'declined'} {abs(rg):.1f}% compared with the previous month.")
+            inc_word = "Income" if persona["mode"] == "personal" else "Revenue"
+            insights.append(f"{inc_word} {'increased' if rg >= 0 else 'declined'} {abs(rg):.1f}% compared with the previous month.")
         if eg is not None and rg is not None and eg > rg:
-            insights.append("Expenses increased faster than revenue during the latest period.")
-    departments = by_dimension(df, "department")
-    if departments:
-        insights.append(f"{departments[0]['department']} currently contributes the highest net profit.")
-    persona = detect_audit_persona(df)
+            insights.append(f"Expenses increased faster than {'income' if persona['mode'] == 'personal' else 'revenue'} during the latest period.")
+    lead_dim = "category" if persona["mode"] == "personal" else "department"
+    dim_rows = [r for r in by_dimension(df, lead_dim) if str(r.get(lead_dim) or "").strip() not in ("", "Unassigned")]
+    if dim_rows:
+        if persona["mode"] == "personal":
+            top_spend = max(dim_rows, key=lambda r: float(r.get("expense") or 0.0))
+            insights.append(f"{top_spend['category']} is your highest living expense category ({curr} {top_spend['expense']:,.0f}).")
+        else:
+            insights.append(f"{dim_rows[0]['department']} currently contributes the highest net profit.")
     budget_rule = budget_50_30_20(df) if persona.get("mode") == "personal" else None
     return render_template(
         "dashboard.html",
@@ -606,10 +724,20 @@ def user_analytics(view):
         )
     if dim:
         rows = fmt_rows(by_dimension(df, dim))
+        dim_titles = {
+            "product": "Product Analysis",
+            "department": "Department Analysis",
+            "category": "Category Analysis",
+            "region": "Region Analysis",
+            "subcategory": "Sub-Category Analysis",
+            "vendor_name": "Payees & Vendors",
+            "payment_method": "Payment Channels",
+            "customer_segment": "50/30/20 Budget (Need vs Want)",
+        }
         return render_template(
             "analysis.html",
-            title=f"{dim.title()} profitability",
-            description="Revenue, expenses, profit and margin are calculated from your imported transactions.",
+            title=dim_titles.get(dim, f"{dim.title()} profitability"),
+            description="Inflow, expenses, net balance, and ratio metrics calculated from your imported transactions.",
             rows=rows,
             brief=dimension_narrative(df, dim, rows, margin_threshold, curr),
             margin_threshold=margin_threshold,
@@ -722,13 +850,14 @@ def user_optimization():
                 "created_at": row["created_at"],
             })
 
+    opt_mode = _resolve_active_persona(df)["mode"]
     return render_template(
         "optimization.html",
         base=base,
         result=result,
-        recommendations=recommendations(df, margin_threshold),
+        recommendations=recommendations(df, margin_threshold, mode=opt_mode),
         plan=target_margin_plan(base, target_margin),
-        opportunities=segment_opportunities(df, margin_threshold),
+        opportunities=segment_opportunities(df, margin_threshold, mode=opt_mode),
         margin_threshold=margin_threshold,
         target_margin=target_margin,
         saved=saved,

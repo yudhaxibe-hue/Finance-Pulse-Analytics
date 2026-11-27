@@ -14,50 +14,85 @@
       </div>
     </section>
   {% else %}
-    <div class="toolbar-card">
-      <form class="filter" method="get">
-        <label>From
-          <input type="date" name="start" value="{{ request.args.get('start', '') }}">
-        </label>
-        <label>To
-          <input type="date" name="end" value="{{ request.args.get('end', '') }}">
-        </label>
-        {% if filter_options and filter_options.years %}
-          <label>Year
-            <select name="year">
-              <option value="">All years</option>
-              {% for yr in filter_options.years %}
-                <option value="{{ yr }}" {{ 'selected' if request.args.get('year') == (yr|string) }}>{{ yr }}</option>
-              {% endfor %}
-            </select>
+    <div class="toolbar-card toolbar-unified">
+      <div class="toolbar-main-row">
+        <form class="filter" method="get" id="dashFilterForm">
+          <label>From
+            <input type="date" name="start" value="{{ request.args.get('start', '') }}">
           </label>
-        {% endif %}
-        {% if filter_options and filter_options.regions %}
-          <label>Region
-            <select name="region">
-              <option value="">All regions</option>
-              {% for reg in filter_options.regions %}
-                <option value="{{ reg }}" {{ 'selected' if request.args.get('region') == reg }}>{{ reg }}</option>
-              {% endfor %}
-            </select>
+          <label>To
+            <input type="date" name="end" value="{{ request.args.get('end', '') }}">
           </label>
-        {% endif %}
-        {% if filter_options and filter_options.departments %}
-          <label>Department
-            <select name="department">
-              <option value="">All units</option>
-              {% for dep in filter_options.departments %}
-                <option value="{{ dep }}" {{ 'selected' if request.args.get('department') == dep }}>{{ dep }}</option>
-              {% endfor %}
-            </select>
-          </label>
-        {% endif %}
-        <button class="secondary">Apply filter</button>
-        {% if request.args.get('start') or request.args.get('end') or request.args.get('year') or request.args.get('region') or request.args.get('department') %}
-          <a class="button quiet" href="{{ url_for('user_dashboard') }}">Reset</a>
-        {% endif %}
-      </form>
-      <span class="muted num">{{ metrics.transactions }} transaction{{ '' if metrics.transactions == 1 else 's' }} in view</span>
+          {% if filter_options and filter_options.years %}
+            <label>Year
+              <select name="year">
+                <option value="">All years</option>
+                {% for yr in filter_options.years %}
+                  <option value="{{ yr }}" {{ 'selected' if request.args.get('year') == (yr|string) }}>{{ yr }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          {% endif %}
+          {% if filter_options and filter_options.regions %}
+            <label>Region
+              <select name="region">
+                <option value="">All regions</option>
+                {% for reg in filter_options.regions %}
+                  <option value="{{ reg }}" {{ 'selected' if request.args.get('region') == reg }}>{{ reg }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          {% endif %}
+          {% if filter_options and filter_options.departments %}
+            <label>Department
+              <select name="department">
+                <option value="">All units</option>
+                {% for dep in filter_options.departments %}
+                  <option value="{{ dep }}" {{ 'selected' if request.args.get('department') == dep }}>{{ dep }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          {% endif %}
+          <button class="secondary">Apply filter</button>
+          {% if request.args.get('start') or request.args.get('end') or request.args.get('year') or request.args.get('region') or request.args.get('department') %}
+            <a class="button quiet" href="{{ url_for('user_dashboard') }}">Reset</a>
+          {% endif %}
+        </form>
+
+        <div class="toolbar-right-meta">
+          {% if persona %}
+            <span class="audit-mode-pill {{ 'is-personal' if persona.mode == 'personal' else 'is-enterprise' }}" id="dashAuditPill">
+              <span class="audit-mode-dot" aria-hidden="true"></span>
+              <span id="dashAuditLabel">{{ persona.type_label }}</span>
+              <span class="audit-conf" id="dashAuditConf">{{ (persona.confidence * 100)|round|int }}%</span>
+            </span>
+          {% endif %}
+          <span class="muted num txn-count-pill" id="dashTxnCount">{{ metrics.transactions }} transaction{{ '' if metrics.transactions == 1 else 's' }}</span>
+        </div>
+      </div>
+
+      {% if persona %}
+        <div class="toolbar-context-row" id="dashContextRow">
+          <div class="budget-inline-strip" id="dashBudgetStrip" {{ '' if persona.mode == 'personal' and budget_rule else 'hidden' }}>
+            {% if budget_rule %}
+              <span class="budget-title">50/30/20 Budget</span>
+              <span class="budget-metric is-needs">Needs <strong>{{ budget_rule.needs.pct }}%</strong> <em>{{ budget_rule.needs.status }}</em></span>
+              <span class="budget-sep" aria-hidden="true">·</span>
+              <span class="budget-metric is-wants">Wants <strong>{{ budget_rule.wants.pct }}%</strong> <em>{{ budget_rule.wants.status }}</em></span>
+              <span class="budget-sep" aria-hidden="true">·</span>
+              <span class="budget-metric is-savings">Savings <strong>{{ budget_rule.savings.pct }}%</strong> <em>{{ budget_rule.savings.status }}</em></span>
+            {% endif %}
+          </div>
+          <div class="context-mode-bar">
+            <span class="context-mode-hint">View mode</span>
+            <div class="mode-segmented compact" role="group" aria-label="Dashboard mode" data-mode-switcher>
+              <button type="button" class="mode-seg-btn {{ 'on' if audit_mode_override=='auto' else '' }}" data-set-mode="auto">Auto</button>
+              <button type="button" class="mode-seg-btn {{ 'on' if audit_mode_override=='personal' else '' }}" data-set-mode="personal">Personal</button>
+              <button type="button" class="mode-seg-btn {{ 'on' if audit_mode_override=='enterprise' else '' }}" data-set-mode="enterprise">Enterprise</button>
+            </div>
+          </div>
+        </div>
+      {% endif %}
     </div>
 
     {% if metrics.revenue is none %}
@@ -68,34 +103,12 @@
         <a class="button secondary pill" href="{{ url_for('user_dashboard') }}">Clear date filter</a>
       </section>
     {% else %}
-      {% if persona %}
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:8px;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:9999px; font-size:12px; font-weight:600; {{ 'background:#EFF6FF; color:#1E40AF; border:1px solid #BFDBFE;' if persona.mode == 'personal' else 'background:#F3F4F6; color:#374151; border:1px solid #E5E7EB;' }}">
-              <span style="width:7px; height:7px; border-radius:50%; {{ 'background:#2563EB;' if persona.mode == 'personal' else 'background:#10B981;' }}"></span>
-              {{ persona.type_label }}
-            </span>
-            <span style="font-size:12px; color:#6B7280;">({{ (persona.confidence * 100)|round|int }}% classification confidence)</span>
-          </div>
-          {% if persona.mode == 'personal' and budget_rule %}
-            <div style="display:flex; align-items:center; gap:10px; font-size:12px; background:#F8FAFC; border:1px solid #E2E8F0; padding:5px 12px; border-radius:8px;">
-              <span><strong>50/30/20 Budget:</strong></span>
-              <span style="color:#2563EB;">Needs: {{ budget_rule.needs.pct }}% ({{ budget_rule.needs.status }})</span>
-              <span style="color:#94A3B8;">·</span>
-              <span style="color:#D97706;">Wants: {{ budget_rule.wants.pct }}% ({{ budget_rule.wants.status }})</span>
-              <span style="color:#94A3B8;">·</span>
-              <span style="color:#16A34A;">Savings: {{ budget_rule.savings.pct }}% ({{ budget_rule.savings.status }})</span>
-            </div>
-          {% endif %}
-        </div>
-      {% endif %}
-
-      <section class="kpi-strip" aria-label="Financial summary metrics">
+      <section class="kpi-strip" id="dashKpiStrip" aria-label="Financial summary metrics">
         {% set kpi_specs = [
           (persona.income_label if persona else 'Total revenue', 'revenue', ''),
           (persona.expense_label if persona else 'Total expenses', 'expenses', ''),
           (persona.profit_label if persona else 'Net profit', 'profit', ''),
-          (persona.margin_label if persona else 'Profit margin', 'margin', '%'),
+          ('Savings & Retention %' if persona and persona.mode == 'personal' else (persona.margin_label if persona else 'Profit margin'), 'margin', '%'),
           ('Retained Savings' if persona and persona.mode == 'personal' else 'ROI', 'total_savings' if persona and persona.mode == 'personal' else 'roi', '' if persona and persona.mode == 'personal' else '%')
         ] %}
         {% for label, key, suffix in kpi_specs %}
@@ -104,7 +117,7 @@
           {% if key in ('profit', 'margin') and val is not none %}
             {% set tone = 'positive' if val >= 0 else 'negative' %}
           {% endif %}
-          <div class="kpi-cell">
+          <div class="kpi-cell" data-kpi-idx="{{ loop.index0 }}">
             <span class="kpi-label">{{ label }}</span>
             <strong class="kpi-value {{ tone }}">
               {% if val is none %}N/A{% else %}{{ '{:,.2f}'.format(val) if key not in ('margin', 'roi') else val }}{{ suffix }}{% endif %}
@@ -146,18 +159,20 @@
               <p>Observations derived from period totals and top-performing segments.</p>
             </div>
           </div>
-          {% if insights %}
-            <ul class="insights">
-              {% for insight in insights %}
-                <li>
-                  <span class="insight-dot" aria-hidden="true"></span>
-                  <span>{{ insight }}</span>
-                </li>
-              {% endfor %}
-            </ul>
-          {% else %}
-            <p class="muted">More than one reporting period is needed for trend insights.</p>
-          {% endif %}
+          <div id="dashInsightsWrap">
+            {% if insights %}
+              <ul class="insights">
+                {% for insight in insights %}
+                  <li>
+                    <span class="insight-dot" aria-hidden="true"></span>
+                    <span>{{ insight }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p class="muted">More than one reporting period is needed for trend insights.</p>
+            {% endif %}
+          </div>
         </article>
 
         <article class="panel">
@@ -167,23 +182,42 @@
               <p>Drill into segment profitability, outlier flags, forecasts, or scenarios.</p>
             </div>
           </div>
-          <div class="action-list">
-            <a class="action-row" href="{{ url_for('user_analytics', view='products') }}">
-              <span class="action-row-main">{{ icon('products', 16) }}<span>Product profitability</span></span>
-              <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
-            </a>
-            <a class="action-row" href="{{ url_for('user_analytics', view='anomalies') }}">
-              <span class="action-row-main">{{ icon('anomalies', 16) }}<span>Potential anomalies</span></span>
-              <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
-            </a>
-            <a class="action-row" href="{{ url_for('user_forecasting') }}">
-              <span class="action-row-main">{{ icon('forecasting', 16) }}<span>Revenue forecast</span></span>
-              <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
-            </a>
-            <a class="action-row" href="{{ url_for('user_optimization') }}">
-              <span class="action-row-main">{{ icon('optimization', 16) }}<span>What-if analysis</span></span>
-              <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
-            </a>
+          <div class="action-list" id="dashExploreList">
+            {% if persona and persona.mode == 'personal' %}
+              <a class="action-row" href="{{ url_for('user_analytics', view='categories') }}">
+                <span class="action-row-main">{{ icon('categories', 16) }}<span>Category spending</span></span>
+                <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+              </a>
+              <a class="action-row" href="{{ url_for('user_analytics', view='budget') }}">
+                <span class="action-row-main">{{ icon('departments', 16) }}<span>50/30/20 Budget</span></span>
+                <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+              </a>
+              <a class="action-row" href="{{ url_for('user_analytics', view='anomalies') }}">
+                <span class="action-row-main">{{ icon('anomalies', 16) }}<span>Spending spikes</span></span>
+                <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+              </a>
+              <a class="action-row" href="{{ url_for('user_forecasting') }}">
+                <span class="action-row-main">{{ icon('forecasting', 16) }}<span>Cashflow forecast</span></span>
+                <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+              </a>
+            {% else %}
+              <a class="action-row" href="{{ url_for('user_analytics', view='products') }}">
+                <span class="action-row-main">{{ icon('products', 16) }}<span>Product profitability</span></span>
+                <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+              </a>
+              <a class="action-row" href="{{ url_for('user_analytics', view='anomalies') }}">
+                <span class="action-row-main">{{ icon('anomalies', 16) }}<span>Potential anomalies</span></span>
+                <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+              </a>
+              <a class="action-row" href="{{ url_for('user_forecasting') }}">
+                <span class="action-row-main">{{ icon('forecasting', 16) }}<span>Revenue forecast</span></span>
+                <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+              </a>
+              <a class="action-row" href="{{ url_for('user_optimization') }}">
+                <span class="action-row-main">{{ icon('optimization', 16) }}<span>What-if analysis</span></span>
+                <span class="action-row-arrow">{{ icon('chevron-right', 15) }}</span>
+              </a>
+            {% endif %}
           </div>
         </article>
       </section>
@@ -213,7 +247,7 @@
             <div class="kpi-cell">
               <span class="kpi-label">Recent net pace / mo</span>
               <strong class="kpi-value {{ 'positive' if runway.recent_monthly_net >= 0 else 'negative' }} num">{{ currency }} {{ '{:,.0f}'.format(runway.recent_monthly_net) }}</strong>
-              <span class="solver-sub num">{{ 'Savings rate ' ~ runway.savings_rate_pct ~ '%' if runway.savings_rate_pct is not none else 'No inflow pace' }}</span>
+              <span class="solver-sub num" id="runwayRateLabel">{{ (('Savings rate ' if persona and persona.mode == 'personal' else 'Net retention ') ~ runway.savings_rate_pct ~ '%') if runway.savings_rate_pct is not none else 'No inflow pace' }}</span>
             </div>
             <div class="kpi-cell">
               <span class="kpi-label">Liquidity posture</span>
@@ -367,13 +401,14 @@
               return;
             }
 
+            const isPers = document.body.getAttribute('data-audit-mode') === 'personal';
             chart = new Chart(canvas, {
               type: 'line',
               data: {
                 labels: series.map(s => s.period),
                 datasets: [
                   {
-                    label: 'Revenue',
+                    label: isPers ? 'Total Inflow' : 'Revenue',
                     data: series.map(s => s.revenue),
                     borderColor: p.cobalt,
                     backgroundColor: p.cobaltSoft,
@@ -384,7 +419,7 @@
                     pointHoverRadius: 5
                   },
                   {
-                    label: 'Expenses',
+                    label: isPers ? 'Living Expenses' : 'Expenses',
                     data: series.map(s => s.expense),
                     borderColor: p.amber,
                     backgroundColor: 'transparent',
@@ -394,7 +429,7 @@
                     pointHoverRadius: 4.5
                   },
                   {
-                    label: 'Profit',
+                    label: isPers ? 'Net Savings' : 'Profit',
                     data: series.map(s => s.profit),
                     borderColor: p.emerald,
                     backgroundColor: 'transparent',
@@ -409,13 +444,18 @@
             });
           }
 
-          renderDashChart('trajectory');
+          let currentChartMode = 'trajectory';
+          window.FinancePulseDashChartRefresh = function () {
+            renderDashChart(currentChartMode);
+          };
+          renderDashChart(currentChartMode);
           const bar = document.querySelector('[data-dash-modes]');
           if (bar) {
             bar.querySelectorAll('.chart-mode-btn').forEach(btn => {
               btn.addEventListener('click', () => {
                 bar.querySelectorAll('.chart-mode-btn').forEach(b => b.classList.toggle('on', b === btn));
-                renderDashChart(btn.getAttribute('data-mode'));
+                currentChartMode = btn.getAttribute('data-mode') || 'trajectory';
+                renderDashChart(currentChartMode);
               });
             });
           }

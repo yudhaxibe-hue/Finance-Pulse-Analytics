@@ -887,4 +887,161 @@
       }
     });
   }
+
+  // Reactive Workspace Mode Switcher (Auto / Personal / Enterprise)
+  const modeButtons = document.querySelectorAll("[data-set-mode]");
+  if (modeButtons.length) {
+    function fmtMoney(v) {
+      if (v === null || v === undefined || Number.isNaN(Number(v))) return "N/A";
+      return Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function escHtml(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    modeButtons.forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const mode = btn.getAttribute("data-set-mode") || "auto";
+        document.querySelectorAll("[data-set-mode]").forEach((b) => {
+          b.classList.toggle("on", b.getAttribute("data-set-mode") === mode);
+        });
+
+        // Optimistic instant sidebar & body switch when explicit mode chosen
+        if (mode === "personal" || mode === "enterprise") {
+          document.body.setAttribute("data-audit-mode", mode);
+        }
+
+        const filters = {};
+        const ff = document.getElementById("dashFilterForm");
+        if (ff) {
+          ["start", "end", "year", "region", "department"].forEach((k) => {
+            const el = ff.elements[k];
+            if (el && el.value) filters[k] = el.value;
+          });
+        }
+
+        try {
+          const res = await fetch("/api/workspace/mode", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ mode, filters }),
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+          if (!data || !data.ok || !data.persona) return;
+
+          const p = data.persona;
+          const m = data.metrics || {};
+          const isPers = p.mode === "personal";
+          document.body.setAttribute("data-audit-mode", p.mode);
+          document.body.setAttribute("data-mode-override", p.override || mode);
+
+          const subEl = document.getElementById("headerSubtitle");
+          if (subEl) {
+            subEl.textContent = isPers
+              ? "Personal & household cashflow intelligence"
+              : "Enterprise financial performance & profitability analytics";
+          }
+
+          const pill = document.getElementById("dashAuditPill");
+          const pillLabel = document.getElementById("dashAuditLabel");
+          const pillConf = document.getElementById("dashAuditConf");
+          if (pill && pillLabel && pillConf) {
+            pill.classList.toggle("is-personal", isPers);
+            pill.classList.toggle("is-enterprise", !isPers);
+            pillLabel.textContent = p.type_label;
+            pillConf.textContent = `${Math.round((p.confidence || 0.99) * 100)}%`;
+          }
+
+          const bStrip = document.getElementById("dashBudgetStrip");
+          if (bStrip) {
+            if (isPers && data.budget_rule) {
+              const br = data.budget_rule;
+              bStrip.innerHTML =
+                `<span class="budget-title">50/30/20 Budget</span>` +
+                `<span class="budget-metric is-needs">Needs <strong>${br.needs.pct}%</strong> <em>${escHtml(br.needs.status)}</em></span>` +
+                `<span class="budget-sep" aria-hidden="true">·</span>` +
+                `<span class="budget-metric is-wants">Wants <strong>${br.wants.pct}%</strong> <em>${escHtml(br.wants.status)}</em></span>` +
+                `<span class="budget-sep" aria-hidden="true">·</span>` +
+                `<span class="budget-metric is-savings">Savings <strong>${br.savings.pct}%</strong> <em>${escHtml(br.savings.status)}</em></span>`;
+              bStrip.hidden = false;
+            } else {
+              bStrip.hidden = true;
+            }
+          }
+
+          const kpiStrip = document.getElementById("dashKpiStrip");
+          if (kpiStrip && m.revenue !== undefined) {
+            const specs = [
+              { label: p.income_label, val: fmtMoney(m.revenue), tone: "" },
+              { label: p.expense_label, val: fmtMoney(m.expenses), tone: "" },
+              { label: p.profit_label, val: fmtMoney(m.profit), tone: m.profit !== null && m.profit !== undefined ? (m.profit >= 0 ? "positive" : "negative") : "" },
+              { label: isPers ? "Savings & Retention %" : p.margin_label, val: m.margin === null || m.margin === undefined ? "N/A" : `${m.margin}%`, tone: m.margin !== null && m.margin !== undefined ? (m.margin >= 0 ? "positive" : "negative") : "" },
+              { label: isPers ? "Retained Savings" : "ROI", val: isPers ? fmtMoney(m.total_savings || 0) : (m.roi === null || m.roi === undefined ? "N/A" : `${m.roi}%`), tone: "" },
+            ];
+            specs.forEach((sp, idx) => {
+              const cell = kpiStrip.querySelector(`[data-kpi-idx="${idx}"]`);
+              if (!cell) return;
+              const lblEl = cell.querySelector(".kpi-label");
+              const valEl = cell.querySelector(".kpi-value");
+              if (lblEl) lblEl.textContent = sp.label;
+              if (valEl) {
+                valEl.textContent = sp.val;
+                valEl.classList.remove("positive", "negative");
+                if (sp.tone) valEl.classList.add(sp.tone);
+              }
+            });
+          }
+
+          const insWrap = document.getElementById("dashInsightsWrap");
+          if (insWrap && Array.isArray(data.insights)) {
+            if (data.insights.length) {
+              insWrap.innerHTML = `<ul class="insights">${data.insights.map((t) => `<li><span class="insight-dot" aria-hidden="true"></span><span>${escHtml(t)}</span></li>`).join("")}</ul>`;
+            } else {
+              insWrap.innerHTML = `<p class="muted">More than one reporting period is needed for trend insights.</p>`;
+            }
+          }
+
+          const explore = document.getElementById("dashExploreList");
+          if (explore) {
+            const items = isPers
+              ? [
+                  { href: "/user/analytics/categories", text: "Category spending" },
+                  { href: "/user/analytics/budget", text: "50/30/20 Budget" },
+                  { href: "/user/analytics/anomalies", text: "Spending spikes" },
+                  { href: "/user/forecasting", text: "Cashflow forecast" },
+                ]
+              : [
+                  { href: "/user/analytics/products", text: "Product profitability" },
+                  { href: "/user/analytics/anomalies", text: "Potential anomalies" },
+                  { href: "/user/forecasting", text: "Revenue forecast" },
+                  { href: "/user/optimization", text: "What-if analysis" },
+                ];
+            const rows = explore.querySelectorAll("a.action-row");
+            rows.forEach((a, i) => {
+              if (!items[i]) return;
+              a.setAttribute("href", items[i].href);
+              const span = a.querySelector(".action-row-main span");
+              if (span) span.textContent = items[i].text;
+            });
+          }
+
+          const rwLbl = document.getElementById("runwayRateLabel");
+          if (rwLbl) {
+            const txt = rwLbl.textContent || "";
+            if (txt.includes("%")) {
+              const pctPart = txt.split(/Savings rate |Net retention /).pop();
+              rwLbl.textContent = (isPers ? "Savings rate " : "Net retention ") + pctPart;
+            }
+          }
+
+          if (typeof window.FinancePulseDashChartRefresh === "function") {
+            window.FinancePulseDashChartRefresh();
+          }
+        } catch (_err) {
+          // Non-fatal
+        }
+      });
+    });
+  }
 })();
