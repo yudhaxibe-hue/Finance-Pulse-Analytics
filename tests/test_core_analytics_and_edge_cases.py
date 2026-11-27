@@ -381,7 +381,7 @@ class TestAdditionalCoverageAndEnterpriseGuards:
         c = app.app.test_client()
         health = c.get("/health").get_json()
         assert health["status"] == "ok"
-        assert health["version"] == config.APP_VERSION == "1.3.5"
+        assert health["version"] == config.APP_VERSION == "1.3.6"
 
         c.post("/register", data={"name": "ViewTester", "email": "vt@example.com", "password": "strongpassword123"})
         c.post("/user/load-enterprise-sample")
@@ -531,15 +531,54 @@ class TestAdditionalCoverageAndEnterpriseGuards:
         })
         p_res = detect_audit_persona(df_personal)
         assert p_res["mode"] == "personal"
+        assert p_res["type_label"] == "Audit Mode: Personal & Household Ledger"
         assert p_res["confidence"] >= 0.80
-        assert "Total Income" in p_res["income_label"]
+        assert "Total Inflow" in p_res["income_label"]
         assert "Living" in p_res["expense_label"]
 
         # 2. Enterprise Ledger Fixture
         df_ent = build_enterprise_10k_dataframe().head(200)
         e_res = detect_audit_persona(df_ent)
         assert e_res["mode"] == "enterprise"
+        assert e_res["type_label"] == "Audit Mode: Corporate P&L"
         assert e_res["confidence"] >= 0.80
-        assert "Total Revenue" in e_res["income_label"]
+        assert "Gross Revenue" in e_res["income_label"]
         assert "Operating Expenses" in e_res["expense_label"]
+
+    def test_importer_auto_header_promotion_and_content_inference(self, tmp_path):
+        from data.importer import detect, normalize, quality_report, read_file
+
+        # 1. Bank statement CSV with 3 metadata banner rows above the true headers
+        csv_banner = tmp_path / "bank_banner.csv"
+        csv_banner.write_text(
+            "HDFC Bank Account Statement,,,\n"
+            "Account Holder: Akash B,,,\n"
+            ",,,\n"
+            "Date,Narration,Debit,Credit\n"
+            "2026-08-01,Salary Credit,0,38000\n"
+            "2026-08-02,Saravana Bhavan,325,0\n",
+            encoding="utf-8",
+        )
+        promoted = read_file(csv_banner)
+        assert "Date" in promoted.columns
+        assert "Narration" in promoted.columns
+        assert len(promoted) == 2
+
+        # 2. Completely arbitrary unknown column headers inferred by cell content
+        weird_df = pd.DataFrame({
+            "Col_A": ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05"],
+            "Col_B": ["Food", "Food", "Housing", "Food", "Housing"],
+            "Col_C": [38000.0, -325.0, -7500.0, -150.0, -400.0],
+            "Col_D": ["Monthly salary credit", "Lunch at Saravana Bhavan", "Monthly PG rent payment", "Tea and snacks", "Electricity share"],
+        })
+        inferred = detect(weird_df.columns, frame=weird_df)
+        assert inferred["date"] == "Col_A"
+        assert inferred["amount"] == "Col_C"
+        assert inferred["category"] == "Col_B"
+        assert inferred["notes"] == "Col_D"
+        rep = quality_report(weird_df, inferred)
+        assert rep["missing_required"] == []
+        norm, excl = normalize(weird_df, inferred)
+        assert float(norm["revenue"].sum()) == 38000.0
+        assert float(norm["expense"].sum()) == 8375.0
 

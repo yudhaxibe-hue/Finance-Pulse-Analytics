@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from .financial_metrics import metrics, period_growth
 
 
@@ -37,11 +38,11 @@ def detect_audit_persona(df) -> dict:
     if df is None or df.empty:
         return {
             "mode": "enterprise",
-            "type_label": "Enterprise & Corporate Audit",
+            "type_label": "Audit Mode: Corporate P&L",
             "confidence": 0.50,
-            "income_label": "Total Revenue",
-            "expense_label": "Total Expenses",
-            "profit_label": "Net Profit",
+            "income_label": "Gross Revenue",
+            "expense_label": "Operating Expenses (OPEX)",
+            "profit_label": "Operating Profit (EBITDA)",
             "margin_label": "Operating Margin %",
             "reasons": ["Default baseline configuration"],
         }
@@ -53,14 +54,14 @@ def detect_audit_persona(df) -> dict:
     # Map column names case-insensitively and space-insensitively
     col_map = {str(c).strip().lower().replace(" ", "_"): c for c in df.columns}
 
-    # 1. Schema & Column Fingerprint (35%)
+    # 1. Schema & Header Fingerprint (Weight: 35%)
     has_need_want = False
-    cust_col = col_map.get("customer_segment")
+    cust_col = col_map.get("customer_segment") or col_map.get("need_or_want")
     if cust_col and cust_col in df:
         val_sample = " ".join(df[cust_col].dropna().astype(str).str.lower().head(40))
         if "need" in val_sample or "want" in val_sample:
             has_need_want = True
-            p_score += 35
+            p_score += 20
             reasons.append("Detected 50/30/20 Need vs Want budget classification")
 
     inv_col = col_map.get("investment") or col_map.get("savings") or col_map.get("savings_inr")
@@ -68,71 +69,94 @@ def detect_audit_persona(df) -> dict:
         try:
             inv_sum = float(pd.to_numeric(df[inv_col], errors="coerce").fillna(0.0).sum())
             if inv_sum > 0:
-                p_score += 15
+                p_score += 10
                 reasons.append("Detected personal recurring deposit / savings retention")
         except Exception:
             pass
 
+    if any(k in col_map for k in ("running_balance", "running_balance_inr", "pocket_money", "allowance")):
+        p_score += 8
+        reasons.append("Found running bank balance / personal allowance tracking")
+
     dep_col = col_map.get("department")
     cent_col = col_map.get("cost_center")
-    tax_col = col_map.get("tax_amount") or col_map.get("tax")
+    tax_col = col_map.get("tax_amount") or col_map.get("tax") or col_map.get("gstin")
+    sku_col = col_map.get("product_sku") or col_map.get("sku")
+    reg_col = col_map.get("region") or col_map.get("territory")
+    cogs_col = col_map.get("cogs") or col_map.get("cost")
 
     non_empty_deps = dep_col and (df[dep_col].dropna().astype(str).str.strip().ne("").sum() > 3)
     non_empty_centers = cent_col and (df[cent_col].dropna().astype(str).str.strip().ne("").sum() > 3)
+    non_empty_sku = sku_col and (df[sku_col].dropna().astype(str).str.strip().ne("").sum() > 3)
+    non_empty_reg = reg_col and (df[reg_col].dropna().astype(str).str.strip().ne("").sum() > 3)
     non_empty_tax = False
     if tax_col and tax_col in df:
         try:
             non_empty_tax = float(pd.to_numeric(df[tax_col], errors="coerce").fillna(0.0).sum()) > 0
         except Exception:
             pass
+    non_empty_cogs = False
+    if cogs_col and cogs_col in df:
+        try:
+            non_empty_cogs = float(pd.to_numeric(df[cogs_col], errors="coerce").fillna(0.0).sum()) > 0
+        except Exception:
+            pass
 
     if non_empty_deps:
-        e_score += 25
+        e_score += 15
         reasons.append("Found multi-department corporate allocations")
     if non_empty_centers:
-        e_score += 20
+        e_score += 12
         reasons.append("Found cost center operational units")
-    if non_empty_tax:
-        e_score += 15
-        reasons.append("Found business tax / GST invoicing line items")
+    if non_empty_tax or non_empty_cogs:
+        e_score += 10
+        reasons.append("Found business tax / GST / COGS accounting lines")
+    if non_empty_sku or non_empty_reg:
+        e_score += 8
 
-    # 2. Semantic Vocabulary & Payee Match (45%)
+    # 2. Semantic Vocabulary & Payee Clustering + Term Density (Weight: 45%)
     personal_keywords = {
         "salary", "stipend", "mess", "tiffin", "rent", "pg", "groceries", "fruits",
         "vegetables", "milk", "tea", "coffee", "snacks", "outing", "outings", "restaurant",
         "restaurants", "dining", "cinema", "movie", "pvr", "bus", "mtc", "metro", "auto",
         "recharge", "airtel", "jio", "laundry", "toiletries", "tuition", "college", "fees",
         "pharmacy", "medical", "doctor", "ott", "netflix", "hotstar", "swiggy", "zomato",
-        "sent home", "family support", "recurring deposit", "rd", "sip", "pocket money"
+        "sent home", "family support", "recurring deposit", "rd", "sip", "pocket money",
+        "saravana bhavan", "tea kadai", "amma mess", "local market", "apollo pharmacy", "pvr cinemas",
     }
     enterprise_keywords = {
         "payroll", "accounts payable", "accounts receivable", "aws", "azure", "gcp", "cloud",
         "saas", "software licenses", "office lease", "logistics", "freight", "b2b",
         "vendor contract", "depreciation", "audit fees", "procurement", "consulting fees",
         "legal compliance", "marketing ad spend", "inventory", "purchase order", "po number",
-        "cogs", "client retainer", "sales pipeline"
+        "cogs", "client retainer", "sales pipeline", "vendor retainer",
     }
 
-    text_fields = []
-    for key in ("category", "subcategory", "vendor_name", "payee", "notes", "description"):
-        c = col_map.get(key)
-        if c and c in df:
-            text_fields.extend(df[c].dropna().astype(str).str.lower().tolist())
-    corpus = " " + " ".join(text_fields) + " "
+    text_cols = [col_map[k] for k in ("category", "subcategory", "vendor_name", "payee", "notes", "description") if k in col_map]
+    total_rows = max(1, len(df))
+    p_row_matches = 0
+    e_row_matches = 0
+    if text_cols:
+        row_texts = df[text_cols].fillna("").astype(str).agg(" ".join, axis=1).str.lower()
+        for txt in row_texts.tolist():
+            if any(kw in txt for kw in personal_keywords):
+                p_row_matches += 1
+            if any(kw in txt for kw in enterprise_keywords):
+                e_row_matches += 1
 
-    p_hits = sum(1 for kw in personal_keywords if f" {kw} " in corpus or f" {kw}" in corpus)
-    e_hits = sum(1 for kw in enterprise_keywords if f" {kw} " in corpus or f" {kw}" in corpus)
+    p_density = p_row_matches / total_rows
+    e_density = e_row_matches / total_rows
 
-    if p_hits > 0:
-        p_score += min(45, p_hits * 9)
-        reasons.append(f"Matched {p_hits} personal lifestyle/household markers (mess, rent, groceries, outings, etc.)")
-    if e_hits > 0:
-        e_score += min(45, e_hits * 9)
-        reasons.append(f"Matched {e_hits} B2B enterprise markers (procurement, payroll, cloud, vendor contracts)")
+    if p_density > 0:
+        p_score += round(min(45.0, p_density * 65.0), 1)
+        reasons.append(f"Semantic density: {p_density * 100:.0f}% of transactions match personal lifestyle/payee terms")
+    if e_density > 0:
+        e_score += round(min(45.0, e_density * 65.0), 1)
+        reasons.append(f"Semantic density: {e_density * 100:.0f}% of transactions match B2B enterprise terms")
 
-    # 3. Cashflow Topology & Transaction Cadence (20%)
-    total_txns = len(df)
+    # 3. Cashflow Topology & Micro-Transaction Cadence (Weight: 20%)
     rev_col = col_map.get("revenue") or col_map.get("revenue_inr") or col_map.get("credit")
+    exp_col = col_map.get("expense") or col_map.get("expenses") or col_map.get("expenses_inr") or col_map.get("debit")
     rev_txns = 0
     if rev_col and rev_col in df:
         try:
@@ -140,37 +164,49 @@ def detect_audit_persona(df) -> dict:
         except Exception:
             pass
 
-    if total_txns >= 10:
-        inflow_ratio = rev_txns / total_txns
+    if total_rows >= 10:
+        inflow_ratio = rev_txns / total_rows
         if inflow_ratio <= 0.08 and rev_txns > 0:
-            p_score += 20
-            reasons.append(f"Discrete inflow cadence ({rev_txns} income credits across {total_txns} transactions)")
+            p_score += 12
+            reasons.append(f"Discrete inflow cadence ({rev_txns} income credits across {total_rows} transactions)")
         elif inflow_ratio >= 0.25:
-            e_score += 20
-            reasons.append(f"Continuous revenue inflow stream ({rev_txns} receipts across {total_txns} transactions)")
+            e_score += 15
+            reasons.append(f"Continuous revenue inflow stream ({rev_txns} receipts across {total_rows} transactions)")
 
-    is_personal = (p_score > e_score) or (has_need_want and p_score >= 35)
+    if exp_col and exp_col in df:
+        try:
+            exp_vals = pd.to_numeric(df[exp_col], errors="coerce").dropna()
+            pos_exps = exp_vals[exp_vals > 0]
+            if len(pos_exps) >= 5:
+                micro_ratio = float((pos_exps <= 500.0).mean())
+                if micro_ratio >= 0.45:
+                    p_score += 10
+                    reasons.append(f"Consumer micro-transaction profile ({micro_ratio * 100:.0f}% outflows <= 500)")
+        except Exception:
+            pass
+
+    is_personal = (p_score > e_score) or (has_need_want and p_score >= 30)
     confidence = min(0.99, max(0.60, round((p_score / (p_score + e_score + 1e-6)) if is_personal else (e_score / (p_score + e_score + 1e-6)), 2)))
 
     if is_personal:
         return {
             "mode": "personal",
-            "type_label": "Personal & Household Audit",
+            "type_label": "Audit Mode: Personal & Household Ledger",
             "confidence": confidence,
-            "income_label": "Total Income / Inflow",
-            "expense_label": "Living & Household Expenses",
-            "profit_label": "Net Savings Retained",
+            "income_label": "Total Inflow / Monthly Salary",
+            "expense_label": "Living & Lifestyle Expenses",
+            "profit_label": "Net Surplus & Retained Cash",
             "margin_label": "Savings & Retention Rate %",
             "reasons": reasons[:3],
         }
     else:
         return {
             "mode": "enterprise",
-            "type_label": "Enterprise & Corporate Audit",
+            "type_label": "Audit Mode: Corporate P&L",
             "confidence": confidence,
-            "income_label": "Total Revenue",
+            "income_label": "Gross Revenue",
             "expense_label": "Operating Expenses (OPEX)",
-            "profit_label": "Net Operating Profit",
+            "profit_label": "Operating Profit (EBITDA)",
             "margin_label": "Operating Margin %",
             "reasons": reasons[:3],
         }

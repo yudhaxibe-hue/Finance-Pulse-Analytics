@@ -156,13 +156,62 @@ def allowed(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in config.ALLOWED_EXTENSIONS
 
 
+def column_fingerprint(columns) -> str:
+    import hashlib
+    normed = "|".join(_norm_header(c) for c in columns if str(c).strip())
+    return hashlib.sha256(normed.encode("utf-8")).hexdigest()[:16]
+
+
+def _auto_promote_header(df: pd.DataFrame) -> pd.DataFrame:
+    """Skip bank statement or Excel title banner rows (first 15 rows) to locate true header row."""
+    if df is None or df.empty or len(df) < 2:
+        return df
+    unnamed_ratio = sum(1 for c in df.columns if str(c).startswith("Unnamed:")) / max(1, len(df.columns))
+    initial_map = detect(df.columns)
+    has_req = ("date" in initial_map) and any(k in initial_map for k in ("revenue", "expense", "credit", "debit", "amount"))
+    if unnamed_ratio < 0.4 and has_req:
+        return df
+
+    best_idx = None
+    best_score = 0
+    scan_limit = min(15, len(df) - 1)
+    for idx in range(scan_limit):
+        row_vals = [str(v).strip() if pd.notna(v) and str(v).strip() else f"Col_{j}" for j, v in enumerate(df.iloc[idx].tolist())]
+        non_empty = sum(1 for v in df.iloc[idx].tolist() if pd.notna(v) and str(v).strip())
+        if non_empty < 2:
+            continue
+        cand_map = detect(row_vals)
+        score = len(cand_map) * 10 + non_empty
+        if ("date" in cand_map) and any(k in cand_map for k in ("revenue", "expense", "credit", "debit", "amount")):
+            score += 50
+        if score > best_score:
+            best_score = score
+            best_idx = idx
+
+    if best_idx is not None and best_score >= 25:
+        new_cols = []
+        seen = {}
+        for j, v in enumerate(df.iloc[best_idx].tolist()):
+            name = str(v).strip() if pd.notna(v) and str(v).strip() else f"Column_{j+1}"
+            if name in seen:
+                seen[name] += 1
+                name = f"{name}_{seen[name]}"
+            else:
+                seen[name] = 0
+            new_cols.append(name)
+        promoted = df.iloc[best_idx + 1:].copy().reset_index(drop=True)
+        promoted.columns = new_cols
+        return promoted
+    return df
+
+
 def read_file(path):
     path = Path(path)
     ext = path.suffix.lower()
     if ext == ".csv":
-        return pd.read_csv(path)
+        return _auto_promote_header(pd.read_csv(path))
     if ext == ".xlsx":
-        return pd.read_excel(path)
+        return _auto_promote_header(pd.read_excel(path))
     if ext == ".json":
         payload = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(payload, dict):
@@ -179,7 +228,95 @@ def read_file(path):
 _CURRENCY_SUFFIX_RE = re.compile(r"\b(?:inr|usd|eur|gbp|aed|sgd|aud|cad|jpy|rs|rupees|dollars)\b$", re.IGNORECASE)
 
 
-def detect(columns):
+def infer_mapping_from_content(frame: pd.DataFrame, mapping: dict) -> dict:
+    """Infer missing date/amount/category/notes columns by inspecting sample cell values."""
+    if frame is None or frame.empty:
+        return mapping
+    out = dict(mapping)
+    used = set(out.values())
+    sample = frame.head(40)
+
+    # 1. Infer date if missing
+    if "date" not in out:
+        for col in frame.columns:
+            if col in used:
+                continue
+            s = sample[col].dropna()
+            if len(s) < 2:
+                continue
+            # Skip pure small integers or pure numeric amounts
+            if pd.api.types.is_numeric_dtype(s):
+                continue
+            str_s = s.astype(str).str.strip()
+            if str_s.str.match(r"^-?\d+(\.\d+)?$").mean() > 0.5:
+                continue
+            parsed = _parse_dates(str_s)
+            if parsed.notna().mean() >= 0.70:
+                out["date"] = col
+                used.add(col)
+                break
+
+    # 2. Infer amount/revenue/expense if all are missing
+    has_amt = any(k in out for k in ("revenue", "expense", "credit", "debit", "amount"))
+    if not has_amt:
+        num_cands = []
+        for col in frame.columns:
+            if col in used:
+                continue
+            s = sample[col].dropna()
+            if len(s) < 2:
+                continue
+            parsed = _parse_numeric_series(s)
+            if parsed.notna().mean() >= 0.75:
+                # Avoid serial/ID numbers (1, 2, 3, 4...)
+                vals = parsed.dropna().tolist()
+                if len(vals) >= 4 and vals == list(range(int(vals[0]), int(vals[0]) + len(vals))):
+                    continue
+                num_cands.append((col, parsed.dropna()))
+
+        if len(num_cands) == 1:
+            out["amount"] = num_cands[0][0]
+            used.add(num_cands[0][0])
+        elif len(num_cands) >= 2:
+            # Heuristic: if one has negative/smaller frequent values or two columns represent cr/dr
+            out["revenue"] = num_cands[0][0]
+            out["expense"] = num_cands[1][0]
+            used.add(num_cands[0][0])
+            used.add(num_cands[1][0])
+
+    # 3. Infer category and notes if missing
+    if "category" not in out or "notes" not in out:
+        text_cands = []
+        for col in frame.columns:
+            if col in used:
+                continue
+            s = sample[col].dropna().astype(str).str.strip()
+            s = s[s != ""]
+            if len(s) < 2:
+                continue
+            if _parse_numeric_series(s).notna().mean() > 0.7:
+                continue
+            uniq_ratio = s.nunique() / max(1, len(s))
+            text_cands.append((col, uniq_ratio, s.str.len().mean()))
+
+        if "category" not in out and text_cands:
+            # Prefer lower cardinality short labels for category
+            cat_cand = min(text_cands, key=lambda x: (x[1], x[2]))
+            if cat_cand[1] <= 0.65:
+                out["category"] = cat_cand[0]
+                used.add(cat_cand[0])
+                text_cands = [c for c in text_cands if c[0] != cat_cand[0]]
+
+        if "notes" not in out and text_cands:
+            # Prefer longer descriptive text for notes
+            note_cand = max(text_cands, key=lambda x: (x[2], x[1]))
+            out["notes"] = note_cand[0]
+            used.add(note_cand[0])
+
+    return out
+
+
+def detect(columns, frame=None):
     lowered = {str(c).strip().lower(): c for c in columns}
     normalized = {}
     currency_stripped = {}
@@ -215,6 +352,9 @@ def detect(columns):
         if matched is not None:
             mapping[target] = matched
             used_cols.add(matched)
+
+    if frame is not None:
+        mapping = infer_mapping_from_content(frame, mapping)
     return mapping
 
 

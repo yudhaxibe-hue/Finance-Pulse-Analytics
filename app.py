@@ -46,7 +46,7 @@ from analytics.privacy import mask_dataframe_pii, mask_pii_text
 from analytics.profitability import by_dimension
 from analytics.receipt_ocr import extract_document_details
 from analytics.visuals import build_charts_zip, render_monthly_cashflow_png, render_segment_profit_png
-from data.importer import allowed, detect, normalize, persist, quality_report, read_file, save_upload
+from data.importer import allowed, column_fingerprint, detect, normalize, persist, quality_report, read_file, save_upload
 from data.sample_data import build_enterprise_10k_dataframe, generate
 from database.db import connect, create_backup, get_journal_mode, initialize, list_backups
 from database.models import inspect_schema_summary
@@ -777,6 +777,17 @@ def user_data():
                         )
                     cleaned, excluded = normalize(frame, custom_mapping)
                     persist(cleaned, staged["filename"], report, excluded, ws_id)
+                    try:
+                        fp = column_fingerprint(frame.columns)
+                        s_conn = connect()
+                        s_conn.execute(
+                            "INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)",
+                            (f"col_fp_{ws_id}_{fp}", json.dumps(custom_mapping)),
+                        )
+                        s_conn.commit()
+                        s_conn.close()
+                    except Exception:
+                        pass
                     session.pop("staged_import", None)
                     audit("dataset_imported", staged["filename"])
                     if g.user and not cleaned.empty:
@@ -830,7 +841,20 @@ def user_data():
             if not isinstance(frame, pd.DataFrame) or frame.empty:
                 flash("The uploaded file contains no rows.", "error")
                 return redirect(url_for("user_data"))
-            mapping = detect(frame.columns)
+            mapping = None
+            try:
+                fp = column_fingerprint(frame.columns)
+                s_conn = connect()
+                saved_fp = s_conn.execute("SELECT value FROM settings WHERE key=?", (f"col_fp_{ws_id}_{fp}",)).fetchone()
+                s_conn.close()
+                if saved_fp and saved_fp["value"]:
+                    cand = json.loads(saved_fp["value"])
+                    if isinstance(cand, dict) and all(v in frame.columns for v in cand.values()):
+                        mapping = cand
+            except Exception:
+                mapping = None
+            if not mapping:
+                mapping = detect(frame.columns, frame=frame)
             report = quality_report(frame, mapping)
             session["staged_import"] = {
                 "path": str(path),

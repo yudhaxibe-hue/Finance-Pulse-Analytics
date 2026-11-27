@@ -759,37 +759,55 @@
   }
 
   function detectAuditPersona(rows) {
-    if (!rows || !rows.length) return { mode: "enterprise", label: "Enterprise & Corporate Audit", incomeLabel: "Total revenue", expenseLabel: "Operating expenses", profitLabel: "Net profit", marginLabel: "Profit margin", roiLabel: "Return on investment" };
-    let pScore = 0;
+    if (!rows || !rows.length) return { mode: "enterprise", label: "Audit Mode: Corporate P&L", incomeLabel: "Gross Revenue", expenseLabel: "Operating Expenses (OPEX)", profitLabel: "Operating Profit (EBITDA)", marginLabel: "Operating Margin %", roiLabel: "Return on investment" };
+    let pScore = 0, eScore = 0;
     const personalKeywords = [
       "salary", "stipend", "mess", "tiffin", "rent", "pg", "groceries", "fruits", "vegetables",
       "milk", "tea", "coffee", "snacks", "outing", "outings", "restaurant", "restaurants",
       "cinema", "movie", "pvr", "bus", "mtc", "metro", "recharge", "airtel", "jio", "laundry",
       "tuition", "college", "fees", "pharmacy", "medical", "doctor", "ott", "netflix", "hotstar",
-      "swiggy", "zomato", "sent home", "recurring deposit", "rd", "sip"
+      "swiggy", "zomato", "sent home", "recurring deposit", "rd", "sip",
+      "saravana bhavan", "tea kadai", "amma mess", "local market", "apollo pharmacy", "pvr cinemas"
     ];
-    let sampleText = "";
-    let revCount = 0;
-    for (let i = 0; i < Math.min(rows.length, 120); i++) {
+    const enterpriseKeywords = [
+      "payroll", "accounts payable", "accounts receivable", "aws", "azure", "gcp", "cloud",
+      "saas", "office lease", "logistics", "freight", "b2b", "vendor contract", "depreciation",
+      "audit fees", "procurement", "consulting fees", "legal compliance", "inventory", "cogs"
+    ];
+    const nSample = Math.min(rows.length, 150);
+    let revCount = 0, microExp = 0, posExp = 0, pRowHits = 0, eRowHits = 0, hasNeedWant = false, depCount = 0;
+    for (let i = 0; i < nSample; i++) {
       const r = rows[i];
       if ((r.revenue || 0) > 0) revCount++;
-      sampleText += " " + (r.category || "") + " " + (r.subcategory || "") + " " + (r.vendor_name || "") + " " + (r.notes || "") + " " + (r.customer_segment || "");
+      if ((r.expense || 0) > 0) {
+        posExp++;
+        if (r.expense <= 500) microExp++;
+      }
+      if (r.department && String(r.department).trim()) depCount++;
+      const seg = String(r.customer_segment || "").toLowerCase();
+      if (seg.includes("need") || seg.includes("want")) hasNeedWant = true;
+      const rowTxt = (
+        (r.category || "") + " " + (r.subcategory || "") + " " + (r.vendor_name || "") + " " + (r.notes || "")
+      ).toLowerCase();
+      if (personalKeywords.some((kw) => rowTxt.includes(kw))) pRowHits++;
+      if (enterpriseKeywords.some((kw) => rowTxt.includes(kw))) eRowHits++;
     }
-    sampleText = sampleText.toLowerCase();
-    if (sampleText.includes("need") || sampleText.includes("want")) pScore += 35;
-    for (const kw of personalKeywords) {
-      if (sampleText.includes(kw)) pScore += 8;
-    }
-    if (rows.length >= 10 && (revCount / rows.length) <= 0.08) pScore += 20;
+    if (hasNeedWant) pScore += 25;
+    if (depCount > 3) eScore += 20;
+    pScore += Math.min(45, (pRowHits / nSample) * 65);
+    eScore += Math.min(45, (eRowHits / nSample) * 65);
+    if (nSample >= 10 && revCount > 0 && (revCount / nSample) <= 0.08) pScore += 15;
+    if (nSample >= 10 && (revCount / nSample) >= 0.25) eScore += 15;
+    if (posExp >= 5 && (microExp / posExp) >= 0.45) pScore += 12;
 
-    const isPersonal = pScore >= 30;
+    const isPersonal = (pScore > eScore) || (hasNeedWant && pScore >= 30);
     return {
       mode: isPersonal ? "personal" : "enterprise",
-      label: isPersonal ? "Personal & Household Audit" : "Enterprise & Corporate Audit",
-      incomeLabel: isPersonal ? "Total Income / Inflow" : "Total revenue",
-      expenseLabel: isPersonal ? "Living Expenses" : "Operating expenses",
-      profitLabel: isPersonal ? "Net Savings Retained" : "Net profit",
-      marginLabel: isPersonal ? "Savings & Retention Rate" : "Profit margin",
+      label: isPersonal ? "Audit Mode: Personal & Household Ledger" : "Audit Mode: Corporate P&L",
+      incomeLabel: isPersonal ? "Total Inflow / Monthly Salary" : "Gross Revenue",
+      expenseLabel: isPersonal ? "Living & Lifestyle Expenses" : "Operating Expenses (OPEX)",
+      profitLabel: isPersonal ? "Net Surplus & Retained Cash" : "Operating Profit (EBITDA)",
+      marginLabel: isPersonal ? "Savings & Retention Rate" : "Operating Margin %",
       roiLabel: isPersonal ? "Retained Savings" : "Return on investment"
     };
   }
