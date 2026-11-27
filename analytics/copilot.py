@@ -11,7 +11,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline
 
 from .anomalies import detect as detect_anomalies
-from .financial_metrics import compute_cashflow_runway, metrics, monthly, period_growth
+from .financial_metrics import budget_50_30_20, compute_cashflow_runway, metrics, monthly, period_growth
 from .forecasting import forecast
 from .ml_engine import ml_summary, score_transactions_risk
 from .optimization import scenario, segment_opportunities, target_margin_plan
@@ -226,6 +226,11 @@ def _pick_tool(question: str) -> str:
         "कணிப்பு", "கணிப்பு", "भविष्य",
     )) or re.search(r"\b(?:in|next|over)\s+\d{1,2}\s*(?:month|months|mo|माह|மாத)\b", low):
         return "future_prediction"
+    if any(w in low for w in (
+        "50/30/20", "50-30-20", "50 30 20", "budget rule", "needs wants", "needs and wants",
+        "பட்ஜெட்", "बजट", "budget status", "how is my budget", "am i over budget", "budget"
+    )):
+        return "budget_audit"
     if any(w in low for w in ("loss", "losses", "deficit", "shortfall", "losing money", "negative month", "overspend", "over budget", "bleeding", "நஷ்டம்", "घाटा", "नुकसान")):
         return "loss_audit"
     if any(w in low for w in ("runway", "burn rate", "months buffer", "survival")):
@@ -236,9 +241,17 @@ def _pick_tool(question: str) -> str:
         return "ml_risk_audit"
     if any(w in low for w in ("target margin", "break-even", "breakeven", "optimiz")):
         return "margin_optimizer"
-    if any(w in low for w in ("vendor", "supplier", "party", "payment mode", "payment method", "upi", "cheque")):
+    if any(w in low for w in (
+        "vendor", "supplier", "party", "payment mode", "payment method", "upi", "cheque",
+        "payee", "who is", "who are", "who gets", "who did i pay", "highest paid",
+        "யார்", "யாருக்கு", "வணிகர்", "விற்பனையாளர்", "व्यापारी", "किसे", "किसको"
+    )):
         return "vendor_or_payment_audit"
-    if any(w in low for w in ("product", "department", "region", "category", "segment", "branch", "course")):
+    if any(w in low for w in (
+        "product", "department", "region", "category", "segment", "branch", "course",
+        "top spend", "highest expense", "highest spend", "most expensive", "spending",
+        "அதிக செலவு", "செலவுகள்", "सर्वाधिक खर्च", "सबसे ज्यादा खर्च"
+    )):
         return "segment_ranking"
     if re.search(r"\b20\d{2}\b", low) or any(w in low for w in ("best month", "worst month", "peak month")):
         return "date_or_year_filter"
@@ -417,6 +430,71 @@ def answer_question(
     exp = float(m["expenses"] or 0.0)
     prof = float(m["profit"] or 0.0)
     margin = m["margin"]
+
+    if tool == "budget_audit":
+        br = budget_50_30_20(df)
+        if not br:
+            ans = f"Total revenue: {_money(rev, currency)}, expenses: {_money(exp, currency)}, net surplus: {_money(prof, currency)}."
+            return {
+                "ok": True,
+                "tool": "budget_audit",
+                "language": lang,
+                "model": "Offline 50/30/20 Budget Engine",
+                "title": "50/30/20 Budget Health" if lang == "en" else "50/30/20 பட்ஜெட் நிலை",
+                "answer": ans,
+                "metrics": [
+                    {"label": "Needs", "value": "N/A"},
+                    {"label": "Wants", "value": "N/A"},
+                    {"label": "Savings", "value": "N/A"},
+                ],
+                "actions": ["Upload ledger with Need/Want tags or categories to unlock automated 50/30/20 breakdown."],
+                "suggestions": ["Tell me the loss", "What will happen in 4 months"],
+            }
+        needs_p = br["needs"]["pct"]
+        wants_p = br["wants"]["pct"]
+        savings_p = br["savings"]["pct"]
+        needs_amt = br["needs"]["amount"]
+        wants_amt = br["wants"]["amount"]
+        savings_amt = br["savings"]["amount"]
+
+        if lang == "ta":
+            ans = (
+                f"50/30/20 பட்ஜெட் பகுப்பாய்வு: தேவைகள் (Needs) {needs_p}% ({_money(needs_amt, currency)}), "
+                f"விருப்பங்கள் (Wants) {wants_p}% ({_money(wants_amt, currency)}), "
+                f"சேமிப்பு (Savings) {savings_p}% ({_money(savings_amt, currency)}). {br.get('headline', '')}"
+            )
+            title = "50/30/20 பட்ஜெட் தணிக்கை"
+        elif lang == "hi":
+            ans = (
+                f"50/30/20 बजट विश्लेषण: आवश्यकताएं (Needs) {needs_p}% ({_money(needs_amt, currency)}), "
+                f"इच्छाएं (Wants) {wants_p}% ({_money(wants_amt, currency)}), "
+                f"बचत (Savings) {savings_p}% ({_money(savings_amt, currency)})। {br.get('headline', '')}"
+            )
+            title = "50/30/20 बजट ऑडिट"
+        else:
+            ans = (
+                f"50/30/20 Budget Health: Needs at {needs_p}% ({_money(needs_amt, currency)} - {br['needs']['status']}), "
+                f"Wants at {wants_p}% ({_money(wants_amt, currency)} - {br['wants']['status']}), "
+                f"Savings & Retained Cash at {savings_p}% ({_money(savings_amt, currency)} - {br['savings']['status']}). "
+                f"{br.get('advice', '')}"
+            )
+            title = "50/30/20 Budget Health Audit"
+
+        return {
+            "ok": True,
+            "tool": "budget_audit",
+            "language": lang,
+            "model": "Offline 50/30/20 Budget Engine",
+            "title": title,
+            "answer": ans,
+            "metrics": [
+                {"label": "Needs (Target ≤50%)", "value": f"{needs_p}% ({br['needs']['status']})"},
+                {"label": "Wants (Target ≤30%)", "value": f"{wants_p}% ({br['wants']['status']})"},
+                {"label": "Savings (Target ≥20%)", "value": f"{savings_p}% ({br['savings']['status']})"},
+            ],
+            "actions": [br.get("advice", "Maintain spending discipline")],
+            "suggestions": ["Tell me the loss", "What will happen in 4 months", "Show top anomalies"],
+        }
 
     if tool == "loss_audit":
         mo_df = monthly(df)

@@ -262,7 +262,7 @@
       <script>
         window.addEventListener('DOMContentLoaded', function () {
           if (!window.Chart) return;
-          const series = {{ series|tojson }};
+          let series = {{ series|tojson }};
           const canvas = document.getElementById('trend');
           const p = window.FinancePulseCharts ? window.FinancePulseCharts.palette : {
             cobalt: '#0066CC', cobaltSoft: 'rgba(0, 102, 204, 0.10)',
@@ -439,7 +439,10 @@
           }
 
           let currentChartMode = 'trajectory';
-          window.FinancePulseDashChartRefresh = function () {
+          window.FinancePulseDashChartRefresh = function (newSeries) {
+            if (Array.isArray(newSeries) && newSeries.length) {
+              series = newSeries;
+            }
             renderDashChart(currentChartMode);
           };
           renderDashChart(currentChartMode);

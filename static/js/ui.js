@@ -1064,7 +1064,7 @@
           }
 
           if (typeof window.FinancePulseDashChartRefresh === "function") {
-            window.FinancePulseDashChartRefresh();
+            window.FinancePulseDashChartRefresh(data.series);
           }
         } catch (_err) {
           // Non-fatal
@@ -1072,4 +1072,15 @@
       });
     });
   }
+
+  // ── Global Cmd+K / Ctrl+K Shortcut to Toggle Copilot ──
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+      e.preventDefault();
+      const copilotBtn = document.querySelector("[data-copilot-open]");
+      if (copilotBtn) {
+        copilotBtn.click();
+      }
+    }
+  });
 })();

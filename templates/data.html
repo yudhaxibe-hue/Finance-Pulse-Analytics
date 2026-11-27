@@ -159,8 +159,9 @@
           <input type="hidden" name="transaction_type" value="Expense">
           <input type="hidden" name="department" value="{{ receipt_preview.fields.department if receipt_preview else 'Operations' }}">
           <input type="hidden" name="notes" id="rcNotes" value="{{ receipt_preview.fields.notes if receipt_preview else 'Scanned document import' }}">
-          <div class="form-actions">
-            <button type="submit">Confirm &amp; save transaction</button>
+          <div class="form-actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <button type="submit" id="btnConfirmReceipt">Confirm &amp; save transaction</button>
+            <a href="{{ url_for('user_receipt_discard') }}" class="button secondary" id="btnDiscardReceipt">Discard scan</a>
           </div>
         </form>
       </div>

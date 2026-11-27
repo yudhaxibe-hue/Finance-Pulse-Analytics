@@ -178,6 +178,18 @@ class TestAllThirteenTools:
         assert res["tool"] == "dataset_and_audit_status"
         assert "16 validated transactions" in res["answer"]
 
+    def test_tool_budget_audit(self):
+        res = answer_question("How is my 50 30 20 budget status?", _copilot_ledger(), currency="INR")
+        assert res["tool"] == "budget_audit"
+        assert "50/30/20" in res["title"]
+        assert "Needs" in res["answer"]
+        assert len(res["metrics"]) == 3
+
+    def test_tool_loss_audit(self):
+        res = answer_question("Tell me the loss and deficit", _copilot_ledger(), currency="INR")
+        assert res["tool"] == "loss_audit"
+        assert "Loss" in res["title"] or "Deficit" in res["title"]
+
     def test_pii_redacted_before_processing(self):
         res = answer_question("Show summary for ceo@secret.org card 4532123456789012", _copilot_ledger())
         assert "ceo@secret.org" not in str(res)

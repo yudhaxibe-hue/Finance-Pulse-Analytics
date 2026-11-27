@@ -1233,6 +1233,16 @@ def user_receipt_confirm():
     return redirect(url_for("user_data"))
 
 
+@app.route("/user/receipt-discard", methods=["GET", "POST"])
+@login_required
+def user_receipt_discard():
+    session.pop("receipt_preview", None)
+    if request.is_json or "application/json" in (request.headers.get("Accept") or ""):
+        return jsonify({"ok": True, "message": "Receipt scan discarded."})
+    flash("Receipt scan discarded.", "info")
+    return redirect(url_for("user_data"))
+
+
 @app.route("/user/load-enterprise-sample", methods=["POST"])
 @login_required
 def user_load_enterprise_sample():

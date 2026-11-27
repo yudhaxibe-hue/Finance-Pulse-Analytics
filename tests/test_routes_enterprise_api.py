@@ -472,3 +472,18 @@ class TestCopilotEndpointsPowerBiApiAndAdminBackups:
         assert b"Gross &amp; Net Profit/Loss" in dash.data
         assert b"btn-export-chart" in dash.data
         assert b"Cumulative Waterfall" in dash.data
+
+    def test_receipt_discard_flow(self, isolated_env):
+        c = _register_user(app.app.test_client())
+        # Set dummy preview in session
+        with c.session_transaction() as sess:
+            sess["receipt_preview"] = {"filename": "test.png", "fields": {}}
+        # Verify receipt preview exists
+        with c.session_transaction() as sess:
+            assert "receipt_preview" in sess
+        # Discard receipt
+        res = c.get("/user/receipt-discard", follow_redirects=True)
+        assert res.status_code == 200
+        # Verify session receipt_preview was cleared
+        with c.session_transaction() as sess:
+            assert "receipt_preview" not in sess
