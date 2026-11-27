@@ -220,8 +220,14 @@ def _pick_tool(question: str) -> str:
         return "personal_cashflow_advisor"
     if any(w in low for w in ("what if", "simulate", "what-if", "agar ")) and re.search(r"[+-]?\d+\s*%", low):
         return "what_if_simulation"
-    if any(w in low for w in ("predict", "forecast", "projection", "future", "ethirkala", "kanippu", "bhavishya", "कணிப்பு", "கணிப்பு", "भविष्य")):
+    if any(w in low for w in (
+        "predict", "forecast", "projection", "future", "will happen", "going to happen",
+        "next month", "next quarter", "next year", "ethirkala", "kanippu", "bhavishya",
+        "कணிப்பு", "கணிப்பு", "भविष्य",
+    )) or re.search(r"\b(?:in|next|over)\s+\d{1,2}\s*(?:month|months|mo|माह|மாத)\b", low):
         return "future_prediction"
+    if any(w in low for w in ("loss", "losses", "deficit", "shortfall", "losing money", "negative month", "overspend", "over budget", "bleeding", "நஷ்டம்", "घाटा", "नुकसान")):
+        return "loss_audit"
     if any(w in low for w in ("runway", "burn rate", "months buffer", "survival")):
         return "cashflow_runway"
     if any(w in low for w in ("anomal", "outlier", "iqr", "isolation forest", "spike")):
@@ -412,9 +418,62 @@ def answer_question(
     prof = float(m["profit"] or 0.0)
     margin = m["margin"]
 
+    if tool == "loss_audit":
+        mo_df = monthly(df)
+        loss_months = mo_df[mo_df["profit"] < 0] if not mo_df.empty else mo_df
+        total_loss_amt = float(abs(loss_months["profit"].sum())) if not loss_months.empty else 0.0
+        cat_rows = by_dimension(df, "category")
+        neg_cats = [r for r in cat_rows if float(r.get("profit") or 0.0) < 0]
+        neg_cats_sorted = sorted(neg_cats, key=lambda r: float(r.get("profit") or 0.0))
+        top_drain = neg_cats_sorted[0] if neg_cats_sorted else None
+        worst_mo = loss_months.sort_values("profit").iloc[0] if not loss_months.empty else None
+
+        if not loss_months.empty:
+            mo_list = ", ".join(f"{r['period'].strftime('%b %Y')} ({_money(r['profit'], currency)})" for _, r in loss_months.iterrows())
+            drain_note = f" Largest expense drain: '{top_drain['category']}' ({_money(top_drain['profit'], currency)})." if top_drain else ""
+            if lang == "ta":
+                ans = f"{len(loss_months)} மாதங்களில் நிகர நஷ்டம் (பற்றாக்குறை) பதிவாகியுள்ளது: {mo_list}.{drain_note}"
+                title_t = "நஷ்டம் & பற்றாக்குறை தணிக்கை"
+            elif lang == "hi":
+                ans = f"{len(loss_months)} माह में शुद्ध घाटा दर्ज हुआ है: {mo_list}।{drain_note}"
+                title_t = "घाटा और कमी ऑडिट"
+            else:
+                ans = f"Detected {len(loss_months)} deficit/loss month(s) totaling {_money(-total_loss_amt, currency)}: {mo_list}.{drain_note}"
+                title_t = "Loss & Deficit Audit"
+        elif top_drain:
+            if lang == "ta":
+                ans = f"மாதாந்திர நிகர இழப்பு எதுவும் இல்லை ({_money(prof, currency)} உபரி). ஆனால் அதிக செலவுப் பிரிவு '{top_drain['category']}' ({_money(top_drain['expense'], currency)})."
+                title_t = "நஷ்டம் & செலவு தணிக்கை"
+            elif lang == "hi":
+                ans = f"कोई मासिक शुद्ध घाटा नहीं है ({_money(prof, currency)} अधिशेष)। सबसे बड़ा खर्च वर्ग '{top_drain['category']}' ({_money(top_drain['expense'], currency)}) है।"
+                title_t = "घाटा और व्यय ऑडिट"
+            else:
+                ans = f"No overall monthly net loss (net surplus {_money(prof, currency)}), though '{top_drain['category']}' is your highest net cash outflow at {_money(top_drain['profit'], currency)}."
+                title_t = "Loss & Outflow Audit"
+        else:
+            ans = f"Zero net loss periods detected across {len(df):,} records (cumulative net surplus {_money(prof, currency)})."
+            title_t = "Loss & Deficit Audit"
+
+        return {
+            "ok": True,
+            "tool": tool,
+            "language": lang,
+            "model": "Offline SQLite Loss & Deficit Analyzer",
+            "title": title_t,
+            "answer": ans,
+            "metrics": [
+                {"label": "Deficit Months", "value": str(len(loss_months))},
+                {"label": "Worst Month", "value": worst_mo["period"].strftime("%b %Y") if worst_mo is not None else "None"},
+                {"label": "Worst Month Net", "value": _money(float(worst_mo["profit"]), currency) if worst_mo is not None else _money(0.0, currency)},
+                {"label": "Top Drain Category", "value": str(top_drain["category"])[:22] if top_drain else "None"},
+            ],
+            "actions": [f"Review '{top_drain['category']}' expenses to eliminate monthly deficits" if top_drain else "Maintain current surplus discipline"],
+            "suggestions": ["What will happen in 4 months?", "Show top anomalies & high-risk entries"],
+        }
+
     if tool == "future_prediction":
         low = str(clean_q).lower()
-        target = "expense" if any(w in low for w in ("expense", "spend", "cost", "kharcha", "selavu")) else ("profit" if any(w in low for w in ("profit", "surplus", "net", "labam", "munafa")) else "revenue")
+        target = "expense" if any(w in low for w in ("expense", "spend", "cost", "kharcha", "selavu")) else ("revenue" if any(w in low for w in ("revenue", "income", "sales", "inflow", "earning")) else "profit")
         h_match = re.search(r"\b(\d{1,2})\s*(?:month|months|mo|माह|மாத)\b", low)
         horizon = max(3, min(24, int(h_match.group(1)))) if h_match else 6
         fc = forecast(df, target=target, horizon=horizon)
