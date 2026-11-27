@@ -29,10 +29,11 @@ import config
 import updater
 from analytics.anomalies import detect as anomalies
 from analytics.copilot import answer_question as ask_copilot
-from analytics.financial_metrics import compute_cashflow_runway, metrics, monthly, period_growth
+from analytics.financial_metrics import budget_50_30_20, compute_cashflow_runway, metrics, monthly, period_growth
 from analytics.forecasting import forecast
 from analytics.intelligence import (
     anomalies_narrative,
+    detect_audit_persona,
     dimension_narrative,
     forecast_narrative,
     ml_insights_narrative,
@@ -552,6 +553,8 @@ def user_dashboard():
     departments = by_dimension(df, "department")
     if departments:
         insights.append(f"{departments[0]['department']} currently contributes the highest net profit.")
+    persona = detect_audit_persona(df)
+    budget_rule = budget_50_30_20(df) if persona.get("mode") == "personal" else None
     return render_template(
         "dashboard.html",
         metrics=m,
@@ -563,6 +566,8 @@ def user_dashboard():
         ml_brief=ml_brief,
         filter_options=_filter_options(raw_df),
         insights=insights,
+        persona=persona,
+        budget_rule=budget_rule,
         portal="user",
     )
 

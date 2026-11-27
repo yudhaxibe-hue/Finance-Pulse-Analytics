@@ -68,8 +68,37 @@
         <a class="button secondary pill" href="{{ url_for('user_dashboard') }}">Clear date filter</a>
       </section>
     {% else %}
+      {% if persona %}
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:9999px; font-size:12px; font-weight:600; {{ 'background:#EFF6FF; color:#1E40AF; border:1px solid #BFDBFE;' if persona.mode == 'personal' else 'background:#F3F4F6; color:#374151; border:1px solid #E5E7EB;' }}">
+              <span style="width:7px; height:7px; border-radius:50%; {{ 'background:#2563EB;' if persona.mode == 'personal' else 'background:#10B981;' }}"></span>
+              {{ persona.type_label }}
+            </span>
+            <span style="font-size:12px; color:#6B7280;">({{ (persona.confidence * 100)|round|int }}% classification confidence)</span>
+          </div>
+          {% if persona.mode == 'personal' and budget_rule %}
+            <div style="display:flex; align-items:center; gap:10px; font-size:12px; background:#F8FAFC; border:1px solid #E2E8F0; padding:5px 12px; border-radius:8px;">
+              <span><strong>50/30/20 Budget:</strong></span>
+              <span style="color:#2563EB;">Needs: {{ budget_rule.needs.pct }}% ({{ budget_rule.needs.status }})</span>
+              <span style="color:#94A3B8;">·</span>
+              <span style="color:#D97706;">Wants: {{ budget_rule.wants.pct }}% ({{ budget_rule.wants.status }})</span>
+              <span style="color:#94A3B8;">·</span>
+              <span style="color:#16A34A;">Savings: {{ budget_rule.savings.pct }}% ({{ budget_rule.savings.status }})</span>
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+
       <section class="kpi-strip" aria-label="Financial summary metrics">
-        {% for label, key, suffix in [('Total revenue', 'revenue', ''), ('Total expenses', 'expenses', ''), ('Net profit', 'profit', ''), ('Profit margin', 'margin', '%'), ('ROI', 'roi', '%')] %}
+        {% set kpi_specs = [
+          (persona.income_label if persona else 'Total revenue', 'revenue', ''),
+          (persona.expense_label if persona else 'Total expenses', 'expenses', ''),
+          (persona.profit_label if persona else 'Net profit', 'profit', ''),
+          (persona.margin_label if persona else 'Profit margin', 'margin', '%'),
+          ('Retained Savings' if persona and persona.mode == 'personal' else 'ROI', 'total_savings' if persona and persona.mode == 'personal' else 'roi', '' if persona and persona.mode == 'personal' else '%')
+        ] %}
+        {% for label, key, suffix in kpi_specs %}
           {% set val = metrics[key] %}
           {% set tone = '' %}
           {% if key in ('profit', 'margin') and val is not none %}
@@ -78,7 +107,7 @@
           <div class="kpi-cell">
             <span class="kpi-label">{{ label }}</span>
             <strong class="kpi-value {{ tone }}">
-              {% if val is none %}N/A{% else %}{{ '{:,.2f}'.format(val) }}{{ suffix }}{% endif %}
+              {% if val is none %}N/A{% else %}{{ '{:,.2f}'.format(val) if key not in ('margin', 'roi') else val }}{{ suffix }}{% endif %}
             </strong>
           </div>
         {% endfor %}

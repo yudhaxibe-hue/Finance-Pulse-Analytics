@@ -381,7 +381,7 @@ class TestAdditionalCoverageAndEnterpriseGuards:
         c = app.app.test_client()
         health = c.get("/health").get_json()
         assert health["status"] == "ok"
-        assert health["version"] == config.APP_VERSION == "1.3.4"
+        assert health["version"] == config.APP_VERSION == "1.3.5"
 
         c.post("/register", data={"name": "ViewTester", "email": "vt@example.com", "password": "strongpassword123"})
         c.post("/user/load-enterprise-sample")
@@ -514,4 +514,32 @@ class TestAdditionalCoverageAndEnterpriseGuards:
         assert win_res["restarting"] is True
         assert spawned and spawned[0][0] == "cmd.exe"
         assert (Path(config.DATA_DIR) / "apply_update.cmd").is_file()
+
+    def test_audit_classifier_persona_personal_vs_enterprise(self):
+        from analytics.intelligence import detect_audit_persona
+        from data.sample_data import build_enterprise_10k_dataframe
+
+        # 1. Personal Ledger Fixture
+        df_personal = pd.DataFrame({
+            "txn_date": pd.date_range("2026-08-01", periods=20),
+            "category": ["Salary"] + ["Food", "Mess", "PG Rent", "Tea", "Groceries"] * 3 + ["Outings", "Outings", "Outings", "Outings"],
+            "notes": ["Monthly salary"] + ["Saravana Bhavan", "Mess fee", "PG rent share", "Tea kadai", "Fruits"] * 3 + ["Marina beach", "PVR movie", "Anjappar", "Hotstar"],
+            "customer_segment": ["Income"] + ["Need", "Need", "Need", "Want", "Need"] * 3 + ["Want", "Want", "Want", "Want"],
+            "revenue": [38000.0] + [0.0] * 19,
+            "expense": [0.0] + [300.0, 3200.0, 7500.0, 50.0, 480.0] * 3 + [150.0, 450.0, 500.0, 199.0],
+            "investment": [0.0] * 10 + [4000.0] + [0.0] * 9,
+        })
+        p_res = detect_audit_persona(df_personal)
+        assert p_res["mode"] == "personal"
+        assert p_res["confidence"] >= 0.80
+        assert "Total Income" in p_res["income_label"]
+        assert "Living" in p_res["expense_label"]
+
+        # 2. Enterprise Ledger Fixture
+        df_ent = build_enterprise_10k_dataframe().head(200)
+        e_res = detect_audit_persona(df_ent)
+        assert e_res["mode"] == "enterprise"
+        assert e_res["confidence"] >= 0.80
+        assert "Total Revenue" in e_res["income_label"]
+        assert "Operating Expenses" in e_res["expense_label"]
 

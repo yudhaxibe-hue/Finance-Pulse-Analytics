@@ -758,6 +758,42 @@
     }
   }
 
+  function detectAuditPersona(rows) {
+    if (!rows || !rows.length) return { mode: "enterprise", label: "Enterprise & Corporate Audit", incomeLabel: "Total revenue", expenseLabel: "Operating expenses", profitLabel: "Net profit", marginLabel: "Profit margin", roiLabel: "Return on investment" };
+    let pScore = 0;
+    const personalKeywords = [
+      "salary", "stipend", "mess", "tiffin", "rent", "pg", "groceries", "fruits", "vegetables",
+      "milk", "tea", "coffee", "snacks", "outing", "outings", "restaurant", "restaurants",
+      "cinema", "movie", "pvr", "bus", "mtc", "metro", "recharge", "airtel", "jio", "laundry",
+      "tuition", "college", "fees", "pharmacy", "medical", "doctor", "ott", "netflix", "hotstar",
+      "swiggy", "zomato", "sent home", "recurring deposit", "rd", "sip"
+    ];
+    let sampleText = "";
+    let revCount = 0;
+    for (let i = 0; i < Math.min(rows.length, 120); i++) {
+      const r = rows[i];
+      if ((r.revenue || 0) > 0) revCount++;
+      sampleText += " " + (r.category || "") + " " + (r.subcategory || "") + " " + (r.vendor_name || "") + " " + (r.notes || "") + " " + (r.customer_segment || "");
+    }
+    sampleText = sampleText.toLowerCase();
+    if (sampleText.includes("need") || sampleText.includes("want")) pScore += 35;
+    for (const kw of personalKeywords) {
+      if (sampleText.includes(kw)) pScore += 8;
+    }
+    if (rows.length >= 10 && (revCount / rows.length) <= 0.08) pScore += 20;
+
+    const isPersonal = pScore >= 30;
+    return {
+      mode: isPersonal ? "personal" : "enterprise",
+      label: isPersonal ? "Personal & Household Audit" : "Enterprise & Corporate Audit",
+      incomeLabel: isPersonal ? "Total Income / Inflow" : "Total revenue",
+      expenseLabel: isPersonal ? "Living Expenses" : "Operating expenses",
+      profitLabel: isPersonal ? "Net Savings Retained" : "Net profit",
+      marginLabel: isPersonal ? "Savings & Retention Rate" : "Profit margin",
+      roiLabel: isPersonal ? "Retained Savings" : "Return on investment"
+    };
+  }
+
   function renderOverview() {
     const hasTotal = state.rows.length > 0;
     document.getElementById("overviewEmpty").classList.toggle("hidden", hasTotal);
@@ -778,14 +814,15 @@
       return;
     }
 
+    const persona = detectAuditPersona(rows);
     const m = computeMetrics(rows);
     const series = monthlySeries(rows);
     const kpiEl = document.getElementById("overviewKpis");
     kpiEl.innerHTML =
-      kpiCard("Total revenue", fmtCurr(m.revenue), m.transactions + " rows") +
-      kpiCard("Operating expenses", fmtCurr(m.expenses), (m.expense_ratio === null ? "N/A" : fmtNum(m.expense_ratio, 1) + "%") + " of revenue") +
-      kpiCard("Net profit", fmtCurr(m.profit), (m.margin === null ? "N/A" : fmtNum(m.margin, 1) + "%") + " margin", m.profit >= 0 ? "pos" : "neg") +
-      kpiCard("Return on investment", m.roi === null ? "N/A" : fmtNum(m.roi, 2) + "%", "Gross " + fmtCurr(m.gross_profit));
+      kpiCard(persona.incomeLabel, fmtCurr(m.revenue), m.transactions + " rows · " + persona.label) +
+      kpiCard(persona.expenseLabel, fmtCurr(m.expenses), (m.expense_ratio === null ? "N/A" : fmtNum(m.expense_ratio, 1) + "%") + " ratio") +
+      kpiCard(persona.profitLabel, fmtCurr(m.profit), (m.margin === null ? "N/A" : fmtNum(m.margin, 1) + "%") + " " + (persona.mode === "personal" ? "retained" : "margin"), m.profit >= 0 ? "pos" : "neg") +
+      kpiCard(persona.roiLabel, persona.mode === "personal" ? fmtCurr(m.investment || 0) : (m.roi === null ? "N/A" : fmtNum(m.roi, 2) + "%"), persona.mode === "personal" ? "Dedicated RD/SIP" : "Gross " + fmtCurr(m.gross_profit));
 
     const rp = computeRiskProfile(rows);
     const rw = computeCashflowRunway(series);

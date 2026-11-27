@@ -33,6 +33,149 @@ def _format_period(val):
     return s
 
 
+def detect_audit_persona(df) -> dict:
+    if df is None or df.empty:
+        return {
+            "mode": "enterprise",
+            "type_label": "Enterprise & Corporate Audit",
+            "confidence": 0.50,
+            "income_label": "Total Revenue",
+            "expense_label": "Total Expenses",
+            "profit_label": "Net Profit",
+            "margin_label": "Operating Margin %",
+            "reasons": ["Default baseline configuration"],
+        }
+
+    p_score = 0.0
+    e_score = 0.0
+    reasons = []
+
+    # Map column names case-insensitively and space-insensitively
+    col_map = {str(c).strip().lower().replace(" ", "_"): c for c in df.columns}
+
+    # 1. Schema & Column Fingerprint (35%)
+    has_need_want = False
+    cust_col = col_map.get("customer_segment")
+    if cust_col and cust_col in df:
+        val_sample = " ".join(df[cust_col].dropna().astype(str).str.lower().head(40))
+        if "need" in val_sample or "want" in val_sample:
+            has_need_want = True
+            p_score += 35
+            reasons.append("Detected 50/30/20 Need vs Want budget classification")
+
+    inv_col = col_map.get("investment") or col_map.get("savings") or col_map.get("savings_inr")
+    if inv_col and inv_col in df:
+        try:
+            inv_sum = float(pd.to_numeric(df[inv_col], errors="coerce").fillna(0.0).sum())
+            if inv_sum > 0:
+                p_score += 15
+                reasons.append("Detected personal recurring deposit / savings retention")
+        except Exception:
+            pass
+
+    dep_col = col_map.get("department")
+    cent_col = col_map.get("cost_center")
+    tax_col = col_map.get("tax_amount") or col_map.get("tax")
+
+    non_empty_deps = dep_col and (df[dep_col].dropna().astype(str).str.strip().ne("").sum() > 3)
+    non_empty_centers = cent_col and (df[cent_col].dropna().astype(str).str.strip().ne("").sum() > 3)
+    non_empty_tax = False
+    if tax_col and tax_col in df:
+        try:
+            non_empty_tax = float(pd.to_numeric(df[tax_col], errors="coerce").fillna(0.0).sum()) > 0
+        except Exception:
+            pass
+
+    if non_empty_deps:
+        e_score += 25
+        reasons.append("Found multi-department corporate allocations")
+    if non_empty_centers:
+        e_score += 20
+        reasons.append("Found cost center operational units")
+    if non_empty_tax:
+        e_score += 15
+        reasons.append("Found business tax / GST invoicing line items")
+
+    # 2. Semantic Vocabulary & Payee Match (45%)
+    personal_keywords = {
+        "salary", "stipend", "mess", "tiffin", "rent", "pg", "groceries", "fruits",
+        "vegetables", "milk", "tea", "coffee", "snacks", "outing", "outings", "restaurant",
+        "restaurants", "dining", "cinema", "movie", "pvr", "bus", "mtc", "metro", "auto",
+        "recharge", "airtel", "jio", "laundry", "toiletries", "tuition", "college", "fees",
+        "pharmacy", "medical", "doctor", "ott", "netflix", "hotstar", "swiggy", "zomato",
+        "sent home", "family support", "recurring deposit", "rd", "sip", "pocket money"
+    }
+    enterprise_keywords = {
+        "payroll", "accounts payable", "accounts receivable", "aws", "azure", "gcp", "cloud",
+        "saas", "software licenses", "office lease", "logistics", "freight", "b2b",
+        "vendor contract", "depreciation", "audit fees", "procurement", "consulting fees",
+        "legal compliance", "marketing ad spend", "inventory", "purchase order", "po number",
+        "cogs", "client retainer", "sales pipeline"
+    }
+
+    text_fields = []
+    for key in ("category", "subcategory", "vendor_name", "payee", "notes", "description"):
+        c = col_map.get(key)
+        if c and c in df:
+            text_fields.extend(df[c].dropna().astype(str).str.lower().tolist())
+    corpus = " " + " ".join(text_fields) + " "
+
+    p_hits = sum(1 for kw in personal_keywords if f" {kw} " in corpus or f" {kw}" in corpus)
+    e_hits = sum(1 for kw in enterprise_keywords if f" {kw} " in corpus or f" {kw}" in corpus)
+
+    if p_hits > 0:
+        p_score += min(45, p_hits * 9)
+        reasons.append(f"Matched {p_hits} personal lifestyle/household markers (mess, rent, groceries, outings, etc.)")
+    if e_hits > 0:
+        e_score += min(45, e_hits * 9)
+        reasons.append(f"Matched {e_hits} B2B enterprise markers (procurement, payroll, cloud, vendor contracts)")
+
+    # 3. Cashflow Topology & Transaction Cadence (20%)
+    total_txns = len(df)
+    rev_col = col_map.get("revenue") or col_map.get("revenue_inr") or col_map.get("credit")
+    rev_txns = 0
+    if rev_col and rev_col in df:
+        try:
+            rev_txns = int((pd.to_numeric(df[rev_col], errors="coerce").fillna(0.0) > 0).sum())
+        except Exception:
+            pass
+
+    if total_txns >= 10:
+        inflow_ratio = rev_txns / total_txns
+        if inflow_ratio <= 0.08 and rev_txns > 0:
+            p_score += 20
+            reasons.append(f"Discrete inflow cadence ({rev_txns} income credits across {total_txns} transactions)")
+        elif inflow_ratio >= 0.25:
+            e_score += 20
+            reasons.append(f"Continuous revenue inflow stream ({rev_txns} receipts across {total_txns} transactions)")
+
+    is_personal = (p_score > e_score) or (has_need_want and p_score >= 35)
+    confidence = min(0.99, max(0.60, round((p_score / (p_score + e_score + 1e-6)) if is_personal else (e_score / (p_score + e_score + 1e-6)), 2)))
+
+    if is_personal:
+        return {
+            "mode": "personal",
+            "type_label": "Personal & Household Audit",
+            "confidence": confidence,
+            "income_label": "Total Income / Inflow",
+            "expense_label": "Living & Household Expenses",
+            "profit_label": "Net Savings Retained",
+            "margin_label": "Savings & Retention Rate %",
+            "reasons": reasons[:3],
+        }
+    else:
+        return {
+            "mode": "enterprise",
+            "type_label": "Enterprise & Corporate Audit",
+            "confidence": confidence,
+            "income_label": "Total Revenue",
+            "expense_label": "Operating Expenses (OPEX)",
+            "profit_label": "Net Operating Profit",
+            "margin_label": "Operating Margin %",
+            "reasons": reasons[:3],
+        }
+
+
 def overview_narrative(df, series_rows, margin_threshold=15.0, currency="INR"):
     if df is None or df.empty or not series_rows:
         return None
@@ -93,29 +236,56 @@ def overview_narrative(df, series_rows, margin_threshold=15.0, currency="INR"):
             f"a 5% operating cost discipline pass across this ledger would retain an extra {_money(trim_save, currency)}."
         )
 
+    persona = detect_audit_persona(df)
+    is_personal = persona["mode"] == "personal"
+
+    if is_personal:
+        savings_note = f" (Includes {_money(m.get('total_savings', 0), currency)} dedicated RD/SIP savings at a {m.get('savings_rate') or 0:.1f}% savings rate)." if m.get("total_savings") else ""
+        step1_detail = (
+            f"Reconciles {len(df):,} personal transactions into monthly household cashflow: "
+            f"{_money(rev, currency)} total income/inflow, {_money(exp, currency)} living expenses, and {_money(prof, currency)} retained savings "
+            f"({_pct(margin)} retention rate).{savings_note}"
+        )
+        step2_head = f"{_pct(margin)} savings retention rate · peak in {_format_period(best['period'])}"
+        step2_detail = (
+            f"Net monthly surplus peaked in {_format_period(best['period'])} ({_money(best['profit'], currency)}) and troughed in "
+            f"{_format_period(worst['period'])} ({_money(worst['profit'], currency)}).{growth_note}"
+        )
+        step3_head = f"+{_money(upside or (exp * 0.10), currency)} 50/30/20 budget optimization upside"
+        step3_detail = (
+            f"Aligning discretionary wants (dining, entertainment, leisure) to 30% of income and curtailing lifestyle leaks "
+            f"could retain an additional +{_money(upside or (exp * 0.10), currency)} in emergency funds and recurring investments."
+        )
+    else:
+        step1_detail = (
+            f"Reconciles {len(df):,} imported transactions into monthly cashflow and margin performance: "
+            f"{_money(rev, currency)} revenue, {_money(exp, currency)} expenses, and {_money(prof, currency)} net profit "
+            f"(target benchmark {margin_threshold:.1f}%)."
+        )
+        step2_head = f"{_pct(margin)} net margin · peak in {_format_period(best['period'])}"
+        step2_detail = (
+            f"Net profit peaked in {_format_period(best['period'])} ({_money(best['profit'], currency)}) and troughed in "
+            f"{_format_period(worst['period'])} ({_money(worst['profit'], currency)}).{growth_note}"
+        )
+        step3_head = what_could_head
+        step3_detail = what_could_detail
+
     return {
         "pillars": [
             {
                 "step": "01 · What it is",
                 "headline": f"{len(series_rows)} monthly period{'s' if len(series_rows) != 1 else ''} ({first_p} to {last_p})",
-                "detail": (
-                    f"Reconciles {len(df):,} imported transactions into monthly cashflow and margin performance: "
-                    f"{_money(rev, currency)} revenue, {_money(exp, currency)} expenses, and {_money(prof, currency)} net profit "
-                    f"(target benchmark {margin_threshold:.1f}%)."
-                ),
+                "detail": step1_detail,
             },
             {
                 "step": "02 · What happened",
-                "headline": f"{_pct(margin)} net margin · peak in {best['period']}",
-                "detail": (
-                    f"Net profit peaked in {best['period']} ({_money(best['profit'], currency)}) and troughed in "
-                    f"{worst['period']} ({_money(worst['profit'], currency)}).{growth_note}"
-                ),
+                "headline": step2_head,
+                "detail": step2_detail,
             },
             {
                 "step": "03 · What could have happened",
-                "headline": what_could_head,
-                "detail": what_could_detail,
+                "headline": step3_head,
+                "detail": step3_detail,
             },
         ],
         "action": {"label": "Test in Optimization", "endpoint": "user_optimization"},
