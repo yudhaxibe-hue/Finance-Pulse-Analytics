@@ -302,8 +302,15 @@
     if (!Array.isArray(objects) || !objects.length) return [];
     const aliasMap = {
       date: ["date", "sales date", "transaction date", "txn date", "txn_date", "entry date", "posting date"],
-      revenue: ["revenue", "total revenue", "gross revenue", "net revenue", "sales", "total sales", "income"],
-      expense: ["expense", "expenses", "total expense", "total expenses", "spend", "spending", "expenditure", "operating expense"],
+      revenue: [
+        "revenue", "total revenue", "gross revenue", "net revenue", "sales", "total sales",
+        "income", "total income", "gross income", "net income", "earnings", "receipts", "turnover"
+      ],
+      expense: [
+        "expense", "expenses", "total expense", "total expenses", "spend", "spending",
+        "expenditure", "operating expense", "operating cost", "operating costs", "total spend",
+        "total spending", "disbursement", "disbursements", "overhead"
+      ],
       credit: ["credit", "credit amount", "cr", "cr amount", "deposit", "receipt", "inflow"],
       debit: ["debit", "debit amount", "dr", "dr amount", "withdrawal", "payment", "outflow"],
       amount: [
@@ -313,7 +320,7 @@
         "total", "value"
       ],
       transaction_type: ["transaction type", "transaction_type", "type", "entry type", "dr/cr", "cr/dr", "flow"],
-      transaction_id: ["transaction id", "transaction_id", "entry id", "entry_id", "voucher no", "receipt no", "reference", "ref no", "invoice id", "id"],
+      transaction_id: ["transaction id", "transaction_id", "txn id", "txn_id", "tx id", "tx_id", "entry id", "entry_id", "voucher no", "receipt no", "reference", "ref no", "invoice id", "id"],
       fiscal_year: ["fiscal year", "fiscal_year", "year", "fy"],
       category: ["category", "segment", "account head"],
       subcategory: ["subcategory", "sub category", "sub_category", "nature", "account nature"],
@@ -326,15 +333,19 @@
       cost: ["cost", "cogs", "cost of goods sold"],
       quantity: ["quantity", "qty", "units"],
       unit_price: ["unit price", "unit_price", "unit amount inr", "unit_amount_inr", "unit amount", "price", "rate"],
-      investment: ["investment", "capex"],
+      investment: ["investment", "capex", "savings", "rd", "sip"],
     };
     const keys = Object.keys(objects[0] || {});
     const lowerLookup = {};
     const normLookup = {};
+    const strippedLookup = {};
+    const currSuffixRe = /\b(?:inr|usd|eur|gbp|aed|sgd|aud|cad|jpy|rs|rupees|dollars)$/i;
     keys.forEach((k) => {
       lowerLookup[k.trim().toLowerCase()] = k;
       const nk = normHeaderKey(k);
       if (nk && normLookup[nk] === undefined) normLookup[nk] = k;
+      const sk = nk.replace(currSuffixRe, "").trim();
+      if (sk && strippedLookup[sk] === undefined) strippedLookup[sk] = k;
     });
     const mapped = {};
     const usedCols = new Set();
@@ -355,15 +366,23 @@
           return;
         }
       }
+      for (const alias of aliasMap[canon]) {
+        const col = strippedLookup[normHeaderKey(alias)];
+        if (col !== undefined && !usedCols.has(col)) {
+          mapped[canon] = col;
+          usedCols.add(col);
+          return;
+        }
+      }
     });
 
     if (!mapped.date) return [];
-    const hasDual = Boolean(mapped.revenue && mapped.expense);
+    const hasDual = Boolean(mapped.revenue || mapped.expense);
     const hasCrDr = Boolean(mapped.credit || mapped.debit);
     const hasAmount = Boolean(mapped.amount);
     if (!hasDual && !hasCrDr && !hasAmount) {
-      // Compatibility fallback if a simple file only has Revenue + Cost
-      if (!(mapped.revenue && mapped.cost)) return [];
+      // Compatibility fallback if a simple file only has Cost
+      if (!mapped.cost) return [];
     }
 
     const out = [];
@@ -376,8 +395,8 @@
       const ttype = mapped.transaction_type ? String(raw[mapped.transaction_type] || "").trim() : "";
 
       if (hasDual) {
-        const rv = parseCleanNum(raw[mapped.revenue]);
-        const ev = parseCleanNum(raw[mapped.expense]);
+        const rv = mapped.revenue ? parseCleanNum(raw[mapped.revenue]) : 0;
+        const ev = mapped.expense ? parseCleanNum(raw[mapped.expense]) : 0;
         rev = Number.isNaN(rv) ? 0 : rv;
         exp = Number.isNaN(ev) ? 0 : ev;
         if (rev < 0 || exp < 0) continue;

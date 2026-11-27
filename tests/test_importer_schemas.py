@@ -233,3 +233,50 @@ class TestEnterprise10kSample:
         assert len(cleaned) == 10000
         assert excluded == 0
         assert set(cleaned["fiscal_year"].dropna().astype(int).unique()) >= {2023, 2024, 2025, 2026}
+
+    def test_currency_suffixed_personal_audit_csv_and_single_sided(self):
+        raw = pd.DataFrame({
+            "Txn_ID": ["TXN-0001", "TXN-0002", "TXN-0017"],
+            "Date": ["2026-08-01", "2026-08-02", "2026-08-08"],
+            "Type": ["Income", "Expense", "Savings"],
+            "Category": ["Salary", "Food", "Savings"],
+            "Sub_Category": ["Monthly Salary", "Restaurants", "Recurring Deposit"],
+            "Description": ["Net salary credit", "Lunch", "RD instalment"],
+            "Payee": ["Employer", "Saravana Bhavan", "Bank RD"],
+            "Payment_Mode": ["Bank Transfer", "UPI", "Bank Transfer"],
+            "Revenue_INR": [38000, 0, 0],
+            "Expenses_INR": [0, 325, 0],
+            "Savings_INR": [0, 0, 4000],
+        })
+        mapping = detect(raw.columns)
+        assert mapping["date"] == "Date"
+        assert mapping["revenue"] == "Revenue_INR"
+        assert mapping["expense"] == "Expenses_INR"
+        assert mapping["transaction_id"] == "Txn_ID"
+        assert mapping["subcategory"] == "Sub_Category"
+        assert mapping["payment_method"] == "Payment_Mode"
+        assert mapping["vendor_name"] == "Payee"
+        assert mapping["investment"] == "Savings_INR"
+
+        report = quality_report(raw, mapping)
+        assert report["missing_required"] == []
+        cleaned, excluded = normalize(raw, mapping)
+        assert len(cleaned) == 3
+        assert excluded == 0
+        assert cleaned["revenue"].sum() == pytest.approx(38000.0)
+        assert cleaned["expense"].sum() == pytest.approx(325.0)
+        assert cleaned["investment"].sum() == pytest.approx(4000.0)
+
+        # Single-sided expense-only ledger
+        exp_only = pd.DataFrame({
+            "Date": ["2026-08-01", "2026-08-02"],
+            "Category": ["Food", "Travel"],
+            "Expenses_USD": [15.5, 42.0],
+        })
+        m2 = detect(exp_only.columns)
+        r2 = quality_report(exp_only, m2)
+        assert r2["missing_required"] == []
+        c2, ex2 = normalize(exp_only, m2)
+        assert len(c2) == 2 and ex2 == 0
+        assert c2["expense"].sum() == pytest.approx(57.5)
+        assert c2["revenue"].sum() == pytest.approx(0.0)

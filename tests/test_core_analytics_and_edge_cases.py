@@ -381,7 +381,7 @@ class TestAdditionalCoverageAndEnterpriseGuards:
         c = app.app.test_client()
         health = c.get("/health").get_json()
         assert health["status"] == "ok"
-        assert health["version"] == config.APP_VERSION == "1.3.2"
+        assert health["version"] == config.APP_VERSION == "1.3.3"
 
         c.post("/register", data={"name": "ViewTester", "email": "vt@example.com", "password": "strongpassword123"})
         c.post("/user/load-enterprise-sample")

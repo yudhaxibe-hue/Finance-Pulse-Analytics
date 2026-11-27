@@ -10,8 +10,15 @@ from database.db import connect
 
 CANONICAL = {
     "date": ["date", "sales date", "transaction date", "txn date", "txn_date", "entry date", "posting date"],
-    "revenue": ["revenue", "total revenue", "gross revenue", "net revenue", "sales", "total sales", "income"],
-    "expense": ["expense", "expenses", "total expense", "total expenses", "spend", "spending", "expenditure", "operating expense"],
+    "revenue": [
+        "revenue", "total revenue", "gross revenue", "net revenue", "sales", "total sales",
+        "income", "total income", "gross income", "net income", "earnings", "receipts", "turnover",
+    ],
+    "expense": [
+        "expense", "expenses", "total expense", "total expenses", "spend", "spending",
+        "expenditure", "operating expense", "operating cost", "operating costs", "total spend",
+        "total spending", "disbursement", "disbursements", "overhead",
+    ],
     "credit": ["credit", "credit amount", "cr", "cr amount", "deposit", "receipt", "inflow"],
     "debit": ["debit", "debit amount", "dr", "dr amount", "withdrawal", "payment", "outflow"],
     "amount": [
@@ -21,14 +28,14 @@ CANONICAL = {
         "total", "value",
     ],
     "cost": ["cost", "cogs", "cost of goods sold"],
-    "investment": ["investment", "capex"],
+    "investment": ["investment", "capex", "savings", "rd", "sip"],
     "tax_amount": ["tax amount", "tax_amount", "tax", "gst", "vat"],
     "discount_amount": ["discount amount", "discount_amount", "discount"],
     "quantity": ["quantity", "qty", "units"],
     "unit_price": ["unit price", "unit_price", "unit amount inr", "unit_amount_inr", "unit amount", "price", "rate"],
     "transaction_id": [
-        "transaction id", "transaction_id", "entry id", "entry_id",
-        "voucher no", "receipt no", "reference", "ref no", "invoice id", "id",
+        "transaction id", "transaction_id", "txn id", "txn_id", "tx id", "tx_id",
+        "entry id", "entry_id", "voucher no", "receipt no", "reference", "ref no", "invoice id", "id",
     ],
     "transaction_type": ["transaction type", "transaction_type", "type", "entry type", "dr/cr", "cr/dr", "flow"],
     "fiscal_year": ["fiscal year", "fiscal_year", "year", "fy"],
@@ -166,13 +173,20 @@ def read_file(path):
     raise ValueError(f"Unsupported file type: {ext}")
 
 
+_CURRENCY_SUFFIX_RE = re.compile(r"\b(?:inr|usd|eur|gbp|aed|sgd|aud|cad|jpy|rs|rupees|dollars)\b$", re.IGNORECASE)
+
+
 def detect(columns):
     lowered = {str(c).strip().lower(): c for c in columns}
     normalized = {}
+    currency_stripped = {}
     for c in columns:
         key = _norm_header(c)
         if key and key not in normalized:
             normalized[key] = c
+        stripped = _CURRENCY_SUFFIX_RE.sub("", key).strip()
+        if stripped and stripped not in currency_stripped:
+            currency_stripped[stripped] = c
 
     mapping = {}
     used_cols = set()
@@ -189,6 +203,12 @@ def detect(columns):
                 if col is not None and col not in used_cols:
                     matched = col
                     break
+        if matched is None:
+            for alias in aliases:
+                col = currency_stripped.get(_norm_header(alias))
+                if col is not None and col not in used_cols:
+                    matched = col
+                    break
         if matched is not None:
             mapping[target] = matched
             used_cols.add(matched)
@@ -199,7 +219,7 @@ def quality_report(frame, mapping):
     missing = []
     if "date" not in mapping:
         missing.append("date")
-    has_dual = "revenue" in mapping and "expense" in mapping
+    has_dual = "revenue" in mapping or "expense" in mapping
     has_crdr = "credit" in mapping or "debit" in mapping
     has_single = "amount" in mapping
     if not (has_dual or has_crdr or has_single):
@@ -262,9 +282,9 @@ def normalize(frame, mapping, exclude_invalid=True):
     raw_dr = _parse_numeric_series(frame[mapping["debit"]]).fillna(0.0) if "debit" in mapping else None
     raw_amt = _parse_numeric_series(frame[mapping["amount"]]).fillna(0.0) if "amount" in mapping else None
 
-    if raw_rev is not None and raw_exp is not None:
-        out["revenue"] = raw_rev
-        out["expense"] = raw_exp
+    if raw_rev is not None or raw_exp is not None:
+        out["revenue"] = raw_rev if raw_rev is not None else pd.Series(0.0, index=frame.index)
+        out["expense"] = raw_exp if raw_exp is not None else pd.Series(0.0, index=frame.index)
     elif raw_cr is not None or raw_dr is not None:
         cr_vals = raw_cr if raw_cr is not None else pd.Series(0.0, index=frame.index)
         dr_vals = raw_dr if raw_dr is not None else pd.Series(0.0, index=frame.index)

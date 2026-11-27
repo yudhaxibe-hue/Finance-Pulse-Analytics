@@ -738,8 +738,35 @@ def user_data():
             else:
                 try:
                     frame = read_file(Path(staged["path"]))
-                    cleaned, excluded = normalize(frame, staged["mapping"])
-                    persist(cleaned, staged["filename"], staged["report"], excluded, ws_id)
+                    custom_mapping = dict(staged["mapping"])
+                    for field in (
+                        "date", "revenue", "expense", "credit", "debit", "amount",
+                        "category", "subcategory", "product", "department", "region",
+                        "vendor_name", "payment_method", "notes",
+                    ):
+                        val = request.form.get(f"map_{field}")
+                        if val is not None:
+                            val = val.strip()
+                            if val in frame.columns:
+                                custom_mapping[field] = val
+                            elif val == "" and field in custom_mapping:
+                                custom_mapping.pop(field, None)
+                    report = quality_report(frame, custom_mapping)
+                    if report["missing_required"]:
+                        flash("Please map the required fields below: " + ", ".join(report["missing_required"]), "error")
+                        staged["mapping"] = custom_mapping
+                        staged["report"] = report
+                        session["staged_import"] = staged
+                        return render_template(
+                            "import_preview.html",
+                            mapping=custom_mapping,
+                            report=report,
+                            preview=frame.head(8).fillna("").to_dict("records"),
+                            columns=list(frame.columns),
+                            portal="user",
+                        )
+                    cleaned, excluded = normalize(frame, custom_mapping)
+                    persist(cleaned, staged["filename"], report, excluded, ws_id)
                     session.pop("staged_import", None)
                     audit("dataset_imported", staged["filename"])
                     if g.user and not cleaned.empty:
@@ -795,15 +822,14 @@ def user_data():
                 return redirect(url_for("user_data"))
             mapping = detect(frame.columns)
             report = quality_report(frame, mapping)
-            if report["missing_required"]:
-                flash("Missing required fields: " + ", ".join(report["missing_required"]), "error")
-                return redirect(url_for("user_data"))
             session["staged_import"] = {
                 "path": str(path),
                 "filename": file.filename,
                 "mapping": mapping,
                 "report": report,
             }
+            if report["missing_required"]:
+                flash("Some required fields couldn't be auto-detected (" + ", ".join(report["missing_required"]) + "). Select the matching columns below.", "error")
             return render_template(
                 "import_preview.html",
                 mapping=mapping,
