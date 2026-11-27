@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from analytics.privacy import mask_pii_text
 
 _CATEGORY_KEYWORDS = {
+    "Healthcare": ("hospital", "clinic", "medical", "pharmacy", "doctor", "dr.", "medicine", "patient", "op bill", "ip bill", "lab", "diagnostic", "consultation", "speciality"),
+    "Education": ("college", "school", "university", "tuition", "semester", "exam fee", "stationery", "textbook"),
     "Software": ("aws", "azure", "google cloud", "saas", "software", "license", "github", "adobe", "hosting", "cloud", "zoom"),
     "Consulting": ("consulting", "advisory", "audit", "legal", "retainer", "agency", "services"),
     "Operations": ("office", "utilities", "electricity", "rent", "internet", "broadband", "logistics", "shipping", "fuel"),
@@ -72,14 +74,49 @@ def _extract_currency(text: str, default: str = "INR") -> str:
     return default
 
 
+_SKIP_LINE_WORDS = (
+    "phone", "tel", "mobile", "helpdesk", "+91", "gstin", "invoice #", "inv-",
+    "date", "zip", "pin", "salai", "road", "street", "dist", "district", "nadu",
+    "patient code", "visit id", "bill no", "reg no",
+)
+
+
+def _is_pin_or_id(token: str, val: float) -> bool:
+    # Reject 6-digit Indian PIN codes (e.g. 603103) or 10-digit phone numbers when unformatted without decimal
+    if "." not in token and "," not in token:
+        if 100000 <= val <= 899999 and len(token) == 6:
+            return True
+        if len(token) >= 8:
+            return True
+    return False
+
+
 def _extract_labeled_amount(lines: List[str], labels: Tuple[str, ...]) -> Optional[float]:
     candidates: List[float] = []
-    for line in lines:
+    for idx, line in enumerate(lines):
         low = line.lower()
         if any(lbl in low for lbl in labels):
-            vals = [float(x.replace(",", "")) for x in _MONEY_RE.findall(line) if float(x.replace(",", "")) > 0]
+            vals = [
+                float(x.replace(",", ""))
+                for x in _MONEY_RE.findall(line)
+                if float(x.replace(",", "")) > 0 and not _is_pin_or_id(x, float(x.replace(",", "")))
+            ]
             if vals:
                 candidates.append(vals[-1])
+            else:
+                # Look ahead up to 6 lines for columnar OCR layouts (label block followed by value block)
+                for look in range(idx + 1, min(len(lines), idx + 7)):
+                    cand_line = lines[look]
+                    if any(skip in cand_line.lower() for skip in _SKIP_LINE_WORDS):
+                        continue
+                    # Match standalone or decimal amounts in lookahead lines
+                    for tok in _MONEY_RE.findall(cand_line):
+                        v = float(tok.replace(",", ""))
+                        if v > 0 and ("." in tok or "," in tok) and not _is_pin_or_id(tok, v):
+                            candidates.append(v)
+                            break
+                    if candidates:
+                        break
     return max(candidates) if candidates else None
 
 
@@ -94,19 +131,27 @@ def parse_receipt_text(raw_text: str, filename: str = "") -> Dict[str, Any]:
 
     # Distinguish Sales/Invoice credit vs Expense/Receipt debit
     is_income = any(k in low for k in ("sales receipt", "payment received", "credit memo", "payout", "revenue", "salary credit", "payslip", "net pay"))
-    tax_amt = _extract_labeled_amount(lines, ("gst", "vat", "tax", "cgst", "sgst")) or 0.0
+    tax_amt = _extract_labeled_amount(lines, ("gst", "vat", "service tax", "tax", "cgst", "sgst")) or 0.0
     total_amt = _extract_labeled_amount(lines, ("grand total", "net total", "total amount", "amount paid", "amount due", "total expense", "total revenue", "balance due", "total", "net pay", "salary"))
 
     if total_amt is None:
+        decimal_nums = []
         all_nums = []
         for ln in lines:
-            if any(skip in ln.lower() for skip in ("phone", "tel", "gstin", "invoice #", "inv-", "date", "zip", "pin")):
+            if any(skip in ln.lower() for skip in _SKIP_LINE_WORDS):
                 continue
             for token in _MONEY_RE.findall(ln):
                 val = float(token.replace(",", ""))
-                if 1.0 <= val <= 1e8:
+                if _is_pin_or_id(token, val):
+                    continue
+                if 1.0 <= val <= 1e7:
                     all_nums.append(val)
-        total_amt = max(all_nums) if all_nums else 0.0
+                    if "." in token:
+                        decimal_nums.append(val)
+        total_amt = max(decimal_nums) if decimal_nums else (max(all_nums) if all_nums else 0.0)
+
+    if total_amt > 0 and tax_amt >= total_amt * 0.5:
+        tax_amt = 0.0
 
     revenue = round(total_amt, 2) if is_income else 0.0
     expense = 0.0 if is_income else round(total_amt, 2)
