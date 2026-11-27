@@ -111,11 +111,25 @@
           </label>
           <label class="field">Email address
             <input type="email" id="authEmail" placeholder="name@company.com" autocomplete="email" required>
+            <div id="authEmailAvail" class="avail-hint hidden" aria-live="polite"></div>
           </label>
-          <label class="field">Password
+          <label class="field" id="authPasswordLabel">Password
             <input type="password" id="authPassword" placeholder="Minimum 6 characters" autocomplete="current-password" required>
           </label>
+          <div id="authForgotLinkWrap" class="forgot-row hidden">
+            <button type="button" class="text-link-btn" id="btnOpenForgot">Forgot password? Reset offline</button>
+          </div>
+          <label class="field" id="authSecurityWordWrap">Security Recovery Word
+            <span class="field-hint">Secret word or phrase to reset your password offline without internet.</span>
+            <input type="text" id="authSecurityWord" placeholder="e.g. secret name, favorite pet, memorable word" autocomplete="off">
+          </label>
+          <label class="field hidden" id="authConfirmWrap">Confirm New Password
+            <input type="password" id="authConfirmPassword" placeholder="Re-enter new password" autocomplete="new-password">
+          </label>
           <button type="submit" class="btn cta-full" id="authSubmitBtn">Create workspace account</button>
+          <div id="authBackToSignInWrap" class="forgot-row hidden" style="justify-content:center; margin-top:4px;">
+            <button type="button" class="text-link-btn" id="btnBackToLogin">Back to Sign in</button>
+          </div>
         </form>
       </div>
     </section>
@@ -172,6 +186,7 @@
               </div>
               <div class="mode-bar" id="overviewModeBar">
                 <button type="button" class="mode-btn is-active" data-mode="combo">Cashflow</button>
+                <button type="button" class="mode-btn" data-mode="profit_loss">Profit / Loss</button>
                 <button type="button" class="mode-btn" data-mode="cumulative">Cumulative</button>
                 <button type="button" class="mode-btn" data-mode="margin">Margin %</button>
               </div>

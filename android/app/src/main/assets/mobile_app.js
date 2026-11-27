@@ -802,7 +802,36 @@
     destroyChart("overview");
     const ctx = document.getElementById("overviewCanvas").getContext("2d");
     const labels = series.map((s) => s.period);
-    if (state.overviewMode === "cumulative") {
+    if (state.overviewMode === "profit_loss") {
+      state.charts.overview = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Net Profit / (Loss)",
+              data: series.map((s) => s.profit),
+              backgroundColor: series.map((s) => s.profit >= 0 ? "rgba(14,96,39,0.85)" : "rgba(166,27,27,0.88)"),
+              borderColor: series.map((s) => s.profit >= 0 ? "#0E6027" : "#A61B1B"),
+              borderWidth: 1.5,
+              borderRadius: 5,
+              order: 1
+            },
+            {
+              type: "line",
+              label: "Revenue Benchmark",
+              data: series.map((s) => s.revenue),
+              borderColor: "#0066CC",
+              borderDash: [4, 4],
+              tension: 0.25,
+              pointRadius: 2.5,
+              order: 0
+            }
+          ]
+        },
+        options: chartOptions(false)
+      });
+    } else if (state.overviewMode === "cumulative") {
       state.charts.overview = new Chart(ctx, {
         type: "line",
         data: {
@@ -1105,17 +1134,45 @@
   }
 
   function openAuth(mode, pushHash) {
-    state.authMode = mode === "login" ? "login" : "register";
+    state.authMode = (mode === "login" || mode === "forgot") ? mode : "register";
     state.view = "auth";
     const isReg = state.authMode === "register";
+    const isForgot = state.authMode === "forgot";
+    const isLogin = state.authMode === "login";
+
     document.getElementById("tabBtnRegister").classList.toggle("is-active", isReg);
-    document.getElementById("tabBtnLogin").classList.toggle("is-active", !isReg);
+    document.getElementById("tabBtnLogin").classList.toggle("is-active", isLogin || isForgot);
     document.getElementById("authNameWrap").classList.toggle("hidden", !isReg);
-    document.getElementById("authHeading").textContent = isReg ? "Create your account" : "Sign in to workspace";
+    document.getElementById("authSecurityWordWrap").classList.toggle("hidden", !(isReg || isForgot));
+    document.getElementById("authConfirmWrap").classList.toggle("hidden", !isForgot);
+    document.getElementById("authForgotLinkWrap").classList.toggle("hidden", !isLogin);
+    document.getElementById("authBackToSignInWrap").classList.toggle("hidden", !isForgot);
+
+    const availEl = document.getElementById("authEmailAvail");
+    if (availEl) availEl.classList.add("hidden");
+
+    const passLabel = document.getElementById("authPasswordLabel");
+    if (passLabel && passLabel.firstChild) {
+      passLabel.firstChild.textContent = isForgot ? "New Password " : "Password ";
+    }
+    const secInput = document.getElementById("authSecurityWord");
+    if (secInput) {
+      secInput.placeholder = isForgot
+        ? "Enter the recovery word you set at signup"
+        : "e.g. secret name, favorite pet, memorable word";
+    }
+
+    document.getElementById("authHeading").textContent = isReg
+      ? "Create your account"
+      : (isForgot ? "Reset password offline" : "Sign in to workspace");
     document.getElementById("authSubheading").textContent = isReg
       ? "Set up a private local workspace on this device for your financial ledgers."
-      : "Enter your account credentials to open your private on-device workspace.";
-    document.getElementById("authSubmitBtn").textContent = isReg ? "Create workspace account" : "Sign in";
+      : (isForgot
+        ? "Verify your security recovery word to reset your password locally without internet."
+        : "Enter your account credentials to open your private on-device workspace.");
+    document.getElementById("authSubmitBtn").textContent = isReg
+      ? "Create workspace account"
+      : (isForgot ? "Reset password offline" : "Sign in");
     document.getElementById("authErrorBox").classList.add("hidden");
     if (pushHash !== false) {
       try { window.location.hash = "#" + state.authMode; } catch (_e) {}
@@ -2020,6 +2077,36 @@
     document.getElementById("btnAuthBack").addEventListener("click", () => openLanding());
     document.getElementById("tabBtnRegister").addEventListener("click", () => openAuth("register"));
     document.getElementById("tabBtnLogin").addEventListener("click", () => openAuth("login"));
+    document.getElementById("btnOpenForgot").addEventListener("click", () => openAuth("forgot"));
+    document.getElementById("btnBackToLogin").addEventListener("click", () => openAuth("login"));
+
+    document.getElementById("authEmail").addEventListener("input", (ev) => {
+      const availEl = document.getElementById("authEmailAvail");
+      if (!availEl) return;
+      if (state.authMode !== "register") {
+        availEl.classList.add("hidden");
+        return;
+      }
+      const val = ev.target.value.trim().toLowerCase();
+      if (!val || !val.includes("@") || !val.includes(".")) {
+        availEl.classList.add("hidden");
+        return;
+      }
+      availEl.classList.remove("hidden", "is-ok", "is-warn");
+      if (val.endsWith(".con")) {
+        availEl.classList.add("is-warn");
+        availEl.textContent = "Did you mean .com instead of .con?";
+        return;
+      }
+      const users = readUsers();
+      if (users.some((u) => u.email === val)) {
+        availEl.classList.add("is-warn");
+        availEl.textContent = "Account already registered on this device.";
+      } else {
+        availEl.classList.add("is-ok");
+        availEl.textContent = "✓ Email address is available";
+      }
+    });
 
     const handleSampleDownload = () => {
       if (window.FINANCE_PULSE_SAMPLE_CSV) {
@@ -2046,7 +2133,11 @@
 
       const users = readUsers();
       if (state.authMode === "register") {
+        const securityWord = document.getElementById("authSecurityWord").value.trim();
         if (!name) return fail("Please enter your full name.");
+        if (!securityWord || securityWord.length < 2) {
+          return fail("Please enter a Security Recovery Word (at least 2 characters) for offline password reset.");
+        }
         if (users.some((u) => u.email === email)) {
           return fail("An account with this email already exists. Switch to Sign in.");
         }
@@ -2054,6 +2145,7 @@
           name,
           email,
           hash: hashSecret(email, password),
+          securityWordHash: hashSecret(email, securityWord.toLowerCase()),
           createdAt: new Date().toISOString(),
           syncedToServer: false,
         };
@@ -2069,6 +2161,26 @@
         errEl.classList.add("hidden");
         renderAll();
         syncAuthWithCentral("register", name, email, password);
+      } else if (state.authMode === "forgot") {
+        const securityWord = document.getElementById("authSecurityWord").value.trim();
+        const confirmPassword = document.getElementById("authConfirmPassword").value;
+        if (!securityWord) return fail("Please enter your Security Recovery Word.");
+        if (password !== confirmPassword) return fail("New password and confirmation do not match.");
+        const idx = users.findIndex((u) => u.email === email);
+        if (idx === -1) return fail("No account found with that email on this device.");
+        const target = users[idx];
+        if (!target.securityWordHash) {
+          return fail("This legacy account does not have a recovery word set. Please contact your administrator.");
+        }
+        if (target.securityWordHash !== hashSecret(email, securityWord.toLowerCase())) {
+          return fail("Incorrect Security Recovery Word. Please verify the secret word you entered during signup.");
+        }
+        target.hash = hashSecret(email, password);
+        writeUsers(users);
+        document.getElementById("authForm").reset();
+        errEl.classList.add("hidden");
+        openAuth("login");
+        showNotice("Password reset offline! Sign in with your new password.", "ok");
       } else {
         let existing = users.find((u) => u.email === email);
         if (!existing && getEffectiveSyncUrl()) {
