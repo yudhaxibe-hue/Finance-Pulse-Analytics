@@ -1038,6 +1038,31 @@
             }
           }
 
+          // ── Reactive Intel Brief (3-Pillar Executive Intelligence) ──
+          const briefWrap = document.getElementById("dashIntelBriefWrap");
+          if (briefWrap && data.brief && Array.isArray(data.brief.pillars) && data.brief.pillars.length) {
+            const bp = data.brief.pillars;
+            briefWrap.innerHTML = `
+              <section class="intel-brief unboxed-intel-brief" aria-label="Executive intelligence brief">
+                <div class="intel-brief-bar">
+                  <div class="intel-brief-title">
+                    <span class="intel-pulse-dot" aria-hidden="true"></span>
+                    <span>Executive intelligence brief</span>
+                    <span class="intel-brief-badge">3-Pillar Decision Intelligence</span>
+                  </div>
+                </div>
+                <div class="intel-grid">
+                  ${bp.map((item, i) => `
+                    <article class="intel-col pillar-card pillar-${i + 1}">
+                      <div class="pillar-top-stripe" aria-hidden="true"></div>
+                      <span class="intel-step">${escHtml(item.step || "")}</span>
+                      <h3 class="intel-headline">${escHtml(item.headline || "")}</h3>
+                      <p class="intel-detail">${escHtml(item.detail || "")}</p>
+                    </article>`).join("")}
+                </div>
+              </section>`;
+          }
+
           if (typeof window.FinancePulseDashChartRefresh === "function") {
             window.FinancePulseDashChartRefresh();
           }
