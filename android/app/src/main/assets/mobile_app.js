@@ -563,7 +563,8 @@
   }
 
   function computeForecast(series, horizon, modelMode) {
-    if (series.length < 4) return null;
+    if (series.length < 2) return null;
+    const isFallback = series.length < 4;
     const mode = modelMode === "ols" ? "ols" : "ensemble";
     const n = series.length;
     const y = series.map((s) => s.profit);
@@ -646,7 +647,8 @@
       });
     }
     return {
-      modelLabel: useEnsemble ? "Ensemble ML Momentum + Seasonal" : "Linear trend regression",
+      modelLabel: isFallback ? "Adaptive Run-Rate Pace (" + n + " mo)" : (useEnsemble ? "Ensemble ML Momentum + Seasonal" : "Linear trend regression"),
+      isFallback,
       slope: round2(slope),
       mae,
       rmse,

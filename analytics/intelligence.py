@@ -13,6 +13,26 @@ def _pct(val):
     return "N/A" if val is None else f"{float(val):.2f}%"
 
 
+def _format_period(val):
+    if val is None:
+        return ""
+    if hasattr(val, "strftime"):
+        return val.strftime("%b %Y")
+    s = str(val).strip()
+    if " " in s:
+        s = s.split(" ")[0]
+    parts = s.split("-")
+    if len(parts) >= 2 and len(parts[0]) == 4:
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        try:
+            m_idx = int(parts[1]) - 1
+            if 0 <= m_idx < 12:
+                return f"{months[m_idx]} {parts[0]}"
+        except Exception:
+            pass
+    return s
+
+
 def overview_narrative(df, series_rows, margin_threshold=15.0, currency="INR"):
     if df is None or df.empty or not series_rows:
         return None
@@ -23,8 +43,8 @@ def overview_narrative(df, series_rows, margin_threshold=15.0, currency="INR"):
     prof = float(m["profit"] or 0.0)
     margin = m["margin"]
 
-    first_p = series_rows[0]["period"]
-    last_p = series_rows[-1]["period"]
+    first_p = _format_period(series_rows[0]["period"])
+    last_p = _format_period(series_rows[-1]["period"])
     best = max(series_rows, key=lambda r: r["profit"])
     worst = min(series_rows, key=lambda r: r["profit"])
 
@@ -286,6 +306,7 @@ def forecast_narrative(result, target, horizon, currency="INR"):
     acc = result["accuracy"]
     model_name = result.get("model", "Linear trend regression")
     is_rf = result.get("model_code") == "random_forest" or "Random Forest" in model_name
+    is_run_rate = result.get("is_fallback") or result.get("model_code") == "run_rate_pace"
     first_v, last_v = hist[0]["value"], hist[-1]["value"]
     end_v = fc[-1]["value"]
     cum_fc = sum(item["value"] for item in fc)
@@ -296,17 +317,28 @@ def forecast_narrative(result, target, horizon, currency="INR"):
     hist_pct_txt = f" ({hist_delta_pct:+.1f}%)" if hist_delta_pct is not None else ""
     fc_pct_txt = f" ({fc_delta_pct:+.1f}%)" if fc_delta_pct is not None else ""
     mape_txt = f", {acc['mape']:.2f}% MAPE" if acc.get("mape") is not None else ""
-    method_headline = (
-        f"{len(hist)}-month Random Forest forecast on {target}"
-        if is_rf else f"{len(hist)}-month linear trend on {target}"
-    )
-    method_detail = (
-        f"Trains an offline 180-tree scikit-learn Random Forest regressor across {hist[0]['period']} to {hist[-1]['period']} "
-        f"using lagged cashflow, 3-month rolling momentum, and seasonality, extending {horizon} months to {fc[-1]['period']}."
-        if is_rf else
-        f"Fits an ordinary least-squares trend across {hist[0]['period']} to {hist[-1]['period']} "
-        f"and extends {horizon} monthly periods forward to {fc[-1]['period']}."
-    )
+    first_p = _format_period(hist[0]['period'])
+    last_p = _format_period(hist[-1]['period'])
+    fc_end_p = _format_period(fc[-1]['period'])
+
+    if is_run_rate:
+        method_headline = f"{len(hist)}-month run-rate pace forecast on {target}"
+        method_detail = (
+            f"Adaptive run-rate velocity model projecting {horizon} periods forward to {fc_end_p} "
+            f"based on {len(hist)} historical periods ({first_p} to {last_p}) until 4+ months are accumulated."
+        )
+    elif is_rf:
+        method_headline = f"{len(hist)}-month Random Forest forecast on {target}"
+        method_detail = (
+            f"Trains an offline 180-tree scikit-learn Random Forest regressor across {first_p} to {last_p} "
+            f"using lagged cashflow, 3-month rolling momentum, and seasonality, extending {horizon} months to {fc_end_p}."
+        )
+    else:
+        method_headline = f"{len(hist)}-month linear trend on {target}"
+        method_detail = (
+            f"Fits an ordinary least-squares trend across {first_p} to {last_p} "
+            f"and extends {horizon} monthly periods forward to {fc_end_p}."
+        )
 
     return {
         "pillars": [
@@ -319,13 +351,13 @@ def forecast_narrative(result, target, horizon, currency="INR"):
                 "step": "02 · What happened",
                 "headline": f"Historically {hist_dir} to {_money(last_v, currency)}{hist_pct_txt}",
                 "detail": (
-                    f"{target.title()} moved from {_money(first_v, currency)} ({hist[0]['period']}) to {_money(last_v, currency)} "
-                    f"({hist[-1]['period']}), with {_money(acc['mae'], currency)} historical MAE{mape_txt}."
+                    f"{target.title()} moved from {_money(first_v, currency)} ({first_p}) to {_money(last_v, currency)} "
+                    f"({last_p}), with {_money(acc['mae'], currency)} historical MAE{mape_txt}."
                 ),
             },
             {
                 "step": "03 · What could happen",
-                "headline": f"Projects {_money(end_v, currency)} by {fc[-1]['period']}{fc_pct_txt}",
+                "headline": f"Projects {_money(end_v, currency)} by {fc_end_p}{fc_pct_txt}",
                 "detail": (
                     f"Projected cumulative {horizon}-month {target} totals "
                     f"{_money(cum_fc, currency)} (±{_money(acc['mae'], currency)} historical MAE band)."

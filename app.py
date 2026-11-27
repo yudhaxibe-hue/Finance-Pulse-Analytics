@@ -579,6 +579,11 @@ def user_analytics(view):
         "departments": "department",
         "categories": "category",
         "regions": "region",
+        "subcategories": "subcategory",
+        "payees": "vendor_name",
+        "vendors": "vendor_name",
+        "channels": "payment_method",
+        "budget": "customer_segment",
     }.get(view)
     if view == "anomalies":
         threshold = _setting_float(cfg, "anomaly_threshold", 1.5, min_val=0.5, max_val=10.0)

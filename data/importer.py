@@ -50,7 +50,10 @@ CANONICAL = {
     "channel": ["channel", "sales channel"],
     "payment_method": ["payment method", "payment_method", "payment mode", "payment_mode", "mode", "payment"],
     "currency_code": ["currency", "currency code", "currency_code"],
-    "customer_segment": ["customer segment", "customer_segment", "client segment"],
+    "customer_segment": [
+        "customer segment", "customer_segment", "client segment",
+        "need or want", "need_or_want", "need want", "budget type", "budget category", "classification",
+    ],
     "vendor_name": [
         "vendor name", "vendor_name", "vendor", "merchant", "party",
         "paid to or received from", "paid_to_or_received_from", "payee", "payor", "counterparty",

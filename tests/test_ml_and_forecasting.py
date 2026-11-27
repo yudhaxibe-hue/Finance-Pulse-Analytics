@@ -107,11 +107,17 @@ class TestRandomForestMlEngine:
 
 
 class TestForecastingEngine:
-    def test_short_series_returns_insufficient_data_error(self):
-        df = _monthly_fixture(3)
-        res = forecast(df, target="revenue", horizon=6)
-        assert "error" in res
-        assert res["forecast"] == []
+    def test_short_series_returns_insufficient_data_or_adaptive_pace(self):
+        df1 = _monthly_fixture(1)
+        res1 = forecast(df1, target="revenue", horizon=6)
+        assert "error" in res1
+        assert res1["forecast"] == []
+
+        df3 = _monthly_fixture(3)
+        res3 = forecast(df3, target="revenue", horizon=6)
+        assert res3.get("model_code") == "run_rate_pace"
+        assert len(res3["forecast"]) == 6
+        assert res3["is_fallback"] is True
 
     def test_five_period_series_falls_back_to_ols(self):
         df = _monthly_fixture(5)

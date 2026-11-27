@@ -43,6 +43,12 @@
       <a class="button secondary pill" href="{{ url_for('user_data') }}">Import monthly data</a>
     </section>
   {% else %}
+    {% if result.is_fallback %}
+      <div style="background:#F0FDF4; border:1px solid #BBF7D0; border-radius:12px; padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; gap:10px; font-size:13px; color:#166534;">
+        <span style="font-weight:600;">⚡ Adaptive Short-Horizon Mode:</span>
+        <span>{{ result.note }}</span>
+      </div>
+    {% endif %}
     <section class="kpi-strip cols-4" aria-label="Forecast model accuracy">
       <div class="kpi-cell">
         <span class="kpi-label">Model used</span>
