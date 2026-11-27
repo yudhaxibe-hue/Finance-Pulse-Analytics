@@ -953,6 +953,7 @@
             pillConf.textContent = `${Math.round((p.confidence || 0.99) * 100)}%`;
           }
 
+          const ctxRow = document.getElementById("dashContextRow");
           const bStrip = document.getElementById("dashBudgetStrip");
           if (bStrip) {
             if (isPers && data.budget_rule) {
@@ -965,8 +966,10 @@
                 `<span class="budget-sep" aria-hidden="true">·</span>` +
                 `<span class="budget-metric is-savings">Savings <strong>${br.savings.pct}%</strong> <em>${escHtml(br.savings.status)}</em></span>`;
               bStrip.hidden = false;
+              if (ctxRow) ctxRow.hidden = false;
             } else {
               bStrip.hidden = true;
+              if (ctxRow) ctxRow.hidden = true;
             }
           }
 

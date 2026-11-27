@@ -72,7 +72,7 @@
       </div>
 
       {% if persona %}
-        <div class="toolbar-context-row" id="dashContextRow">
+        <div class="toolbar-context-row" id="dashContextRow" {{ '' if persona.mode == 'personal' and budget_rule else 'hidden' }}>
           <div class="budget-inline-strip" id="dashBudgetStrip" {{ '' if persona.mode == 'personal' and budget_rule else 'hidden' }}>
             {% if budget_rule %}
               <span class="budget-title">50/30/20 Budget</span>
@@ -82,14 +82,6 @@
               <span class="budget-sep" aria-hidden="true">·</span>
               <span class="budget-metric is-savings">Savings <strong>{{ budget_rule.savings.pct }}%</strong> <em>{{ budget_rule.savings.status }}</em></span>
             {% endif %}
-          </div>
-          <div class="context-mode-bar">
-            <span class="context-mode-hint">View mode</span>
-            <div class="mode-segmented compact" role="group" aria-label="Dashboard mode" data-mode-switcher>
-              <button type="button" class="mode-seg-btn {{ 'on' if audit_mode_override=='auto' else '' }}" data-set-mode="auto">Auto</button>
-              <button type="button" class="mode-seg-btn {{ 'on' if audit_mode_override=='personal' else '' }}" data-set-mode="personal">Personal</button>
-              <button type="button" class="mode-seg-btn {{ 'on' if audit_mode_override=='enterprise' else '' }}" data-set-mode="enterprise">Enterprise</button>
-            </div>
           </div>
         </div>
       {% endif %}
