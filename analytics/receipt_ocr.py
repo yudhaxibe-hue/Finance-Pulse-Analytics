@@ -12,31 +12,33 @@ from typing import Any, Dict, List, Optional, Tuple
 from analytics.privacy import mask_pii_text
 
 _CATEGORY_KEYWORDS = {
-    "Healthcare": ("hospital", "clinic", "medical", "pharmacy", "doctor", "dr.", "medicine", "patient", "op bill", "ip bill", "lab", "diagnostic", "consultation", "speciality"),
+    "Healthcare": ("hospital", "clinic", "medical", "pharmacy", "doctor", "dr.", "medicine", "patient", "op bill", "ip bill", "lab", "diagnostic", "consultation", "speciality", "apollo", "medplus", "1mg"),
     "Education": ("college", "school", "university", "tuition", "semester", "exam fee", "stationery", "textbook"),
-    "Software": ("aws", "azure", "google cloud", "saas", "software", "license", "github", "adobe", "hosting", "cloud", "zoom"),
+    "Software": ("aws", "azure", "google cloud", "saas", "software", "license", "github", "adobe", "hosting", "cloud", "zoom", "microsoft 365", "workspace"),
+    "Utilities & Telecom": ("electricity", "water bill", "tneb", "bescom", "airtel", "jio", "broadband", "fibernet", "recharge", "gas bill", "internet"),
+    "Travel": ("petrol", "diesel", "fuel", "hpcl", "bpcl", "iocl", "indian oil", "shell", "airline", "flight", "hotel", "uber", "ola", "rapido", "cab", "rail", "irctc", "metro", "fastag", "toll", "boarding"),
+    "Groceries & Dining": ("restaurant", "cafe", "coffee", "mart", "supermarket", "kirana", "dining", "food", "bakery", "swiggy", "zomato", "blinkit", "zepto", "bigbasket", "dmart", "reliance fresh", "bakers", "bhavan", "mess", "tiffin", "biryani", "idli", "snacks", "lunch", "dinner", "breakfast"),
+    "Shopping & Retail": ("amazon", "flipkart", "myntra", "apparel", "clothing", "electronics", "croma", "reliance digital", "pothys", "retail"),
     "Consulting": ("consulting", "advisory", "audit", "legal", "retainer", "agency", "services"),
-    "Operations": ("office", "utilities", "electricity", "rent", "internet", "broadband", "logistics", "shipping", "fuel"),
-    "Travel": ("airline", "flight", "hotel", "uber", "ola", "cab", "rail", "travel", "boarding"),
-    "Marketing": ("ads", "marketing", "campaign", "meta ads", "google ads", "promotion", "sponsorship"),
+    "Operations": ("office", "rent", "lease", "maintenance", "courier", "logistics", "shipping"),
     "Payroll": ("salary", "payroll", "wages", "stipend", "bonus", "compensation"),
-    "Groceries & Dining": ("restaurant", "cafe", "coffee", "mart", "supermarket", "dining", "food", "bakery", "swiggy", "zomato"),
 }
 
 _DATE_PATTERNS = [
-    (re.compile(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b"), "ymd"),
-    (re.compile(r"\b(\d{1,2})[-/](\d{1,2})[-/](20\d{2})\b"), "dmy"),
-    (re.compile(r"\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s,]+(20\d{2})\b", re.I), "dmony"),
-    (re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2})[\s,]+(20\d{2})\b", re.I), "mondy"),
+    (re.compile(r"\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b"), "ymd"),
+    (re.compile(r"\b(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})\b"), "dmy"),
+    (re.compile(r"\b(\d{1,2})[-/\s]+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-/\s,]+(20\d{2})\b", re.I), "dmony"),
+    (re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-/\s]+(\d{1,2})[-/\s,]+(20\d{2})\b", re.I), "mondy"),
 ]
 _MONTH_MAP = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
     "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
 }
 _MONEY_RE = re.compile(
-    r"(?:INR|Rs\.?|USD|\$|EUR|€|GBP|£)?\s*([0-9]{1,3}(?:,[0-9]{2,3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)(?![0-9])",
+    r"(?:INR|Rs\.?|USD|\$|EUR|€|GBP|£|₹)?\s*([0-9]{1,3}(?:,[0-9]{2,3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)(?![0-9])",
     re.I,
 )
+_HAS_CURR_PREFIX_RE = re.compile(r"(?:INR|Rs\.?|USD|\$|EUR|€|GBP|£|₹)", re.I)
 
 
 def _extract_date_iso(text: str) -> str:
@@ -77,12 +79,21 @@ def _extract_currency(text: str, default: str = "INR") -> str:
 _SKIP_LINE_WORDS = (
     "phone", "tel", "mobile", "helpdesk", "+91", "gstin", "invoice #", "inv-",
     "date", "zip", "pin", "salai", "road", "street", "dist", "district", "nadu",
-    "patient code", "visit id", "bill no", "reg no",
+    "patient code", "visit id", "bill no", "reg no", "hsn", "sac", "fssai",
+    "cin:", "pan:", "tan:", "order id", "txn id", "utr", "ref no",
+)
+_EXCLUDED_TOTAL_WORDS = (
+    "sub total", "subtotal", "sub-total", "total qty", "total items", "total units",
+    "total weight", "total savings", "total discount", "cash tendered", "tendered",
+    "change due", "balance change", "mrp total",
 )
 
 
-def _is_pin_or_id(token: str, val: float) -> bool:
-    # Reject 6-digit Indian PIN codes (e.g. 603103) or 10-digit phone numbers when unformatted without decimal
+def _is_pin_or_id(token: str, val: float, has_curr: bool = False) -> bool:
+    if "." not in token and "," not in token and not has_curr:
+        # Bare 5+ digit integers without decimals/currency are almost always PIN codes, HSN codes, invoice IDs, or phone numbers
+        if len(token) >= 5:
+            return True
     if "." not in token and "," not in token:
         if 100000 <= val <= 899999 and len(token) == 6:
             return True
@@ -91,33 +102,50 @@ def _is_pin_or_id(token: str, val: float) -> bool:
     return False
 
 
-def _extract_labeled_amount(lines: List[str], labels: Tuple[str, ...]) -> Optional[float]:
+def _extract_line_amounts(line: str) -> List[Tuple[float, bool]]:
+    out: List[Tuple[float, bool]] = []
+    for m in _MONEY_RE.finditer(line):
+        tok = m.group(1)
+        val = float(tok.replace(",", ""))
+        prefix_slice = line[max(0, m.start() - 5):m.start() + 4]
+        has_curr = bool(_HAS_CURR_PREFIX_RE.search(prefix_slice))
+        if val > 0 and not _is_pin_or_id(tok, val, has_curr=has_curr):
+            out.append((val, "." in tok or "," in tok or has_curr))
+    return out
+
+
+def _extract_labeled_amount(lines: List[str], labels: Tuple[str, ...], sum_matches: bool = False, exclude: Tuple[str, ...] = ()) -> Optional[float]:
     candidates: List[float] = []
     for idx, line in enumerate(lines):
         low = line.lower()
+        if exclude and any(ex in low for ex in exclude):
+            continue
         if any(lbl in low for lbl in labels):
-            vals = [
-                float(x.replace(",", ""))
-                for x in _MONEY_RE.findall(line)
-                if float(x.replace(",", "")) > 0 and not _is_pin_or_id(x, float(x.replace(",", "")))
-            ]
+            vals = _extract_line_amounts(line)
             if vals:
-                candidates.append(vals[-1])
+                candidates.append(vals[-1][0])
             else:
                 # Look ahead up to 6 lines for columnar OCR layouts (label block followed by value block)
                 for look in range(idx + 1, min(len(lines), idx + 7)):
                     cand_line = lines[look]
                     if any(skip in cand_line.lower() for skip in _SKIP_LINE_WORDS):
                         continue
-                    # Match standalone or decimal amounts in lookahead lines
-                    for tok in _MONEY_RE.findall(cand_line):
-                        v = float(tok.replace(",", ""))
-                        if v > 0 and ("." in tok or "," in tok) and not _is_pin_or_id(tok, v):
-                            candidates.append(v)
-                            break
-                    if candidates:
+                    look_vals = [v for v, is_fmt in _extract_line_amounts(cand_line) if is_fmt]
+                    if look_vals:
+                        candidates.append(look_vals[-1])
                         break
-    return max(candidates) if candidates else None
+    if not candidates:
+        return None
+    return round(sum(candidates), 2) if sum_matches else max(candidates)
+
+
+def _extract_tax_amount(lines: List[str]) -> float:
+    cgst = _extract_labeled_amount(lines, ("cgst",), sum_matches=True)
+    sgst = _extract_labeled_amount(lines, ("sgst",), sum_matches=True)
+    igst = _extract_labeled_amount(lines, ("igst",), sum_matches=True)
+    if cgst or sgst or igst:
+        return round((cgst or 0.0) + (sgst or 0.0) + (igst or 0.0), 2)
+    return _extract_labeled_amount(lines, ("service tax", "gst", "vat", "tax"), exclude=("tax invoice", "gstin", "taxable", "before tax")) or 0.0
 
 
 def parse_receipt_text(raw_text: str, filename: str = "") -> Dict[str, Any]:
@@ -129,10 +157,25 @@ def parse_receipt_text(raw_text: str, filename: str = "") -> Dict[str, Any]:
     txn_date = _extract_date_iso(joined)
     currency = _extract_currency(joined)
 
-    # Distinguish Sales/Invoice credit vs Expense/Receipt debit
-    is_income = any(k in low for k in ("sales receipt", "payment received", "credit memo", "payout", "revenue", "salary credit", "payslip", "net pay"))
-    tax_amt = _extract_labeled_amount(lines, ("gst", "vat", "service tax", "tax", "cgst", "sgst")) or 0.0
-    total_amt = _extract_labeled_amount(lines, ("grand total", "net total", "total amount", "amount paid", "amount due", "total expense", "total revenue", "balance due", "total", "net pay", "salary"))
+    # Distinguish Sales/Invoice credit vs Expense/Receipt debit (use word boundary for 'net pay' so 'net payable' isn't matched)
+    is_income = (
+        any(k in low for k in ("sales receipt", "payment received", "credit memo", "payout", "salary credit", "salary slip", "payslip", "credited to"))
+        or bool(re.search(r"\bnet pay\b", low))
+    )
+    tax_amt = _extract_tax_amount(lines)
+
+    # Strict tiered total matching: final payable total beats subtotal / cash tendered
+    total_amt = _extract_labeled_amount(
+        lines,
+        ("grand total", "net payable", "amount payable", "net amount", "net total", "total payable", "invoice total", "bill total", "total amount", "amount due", "balance due"),
+        exclude=_EXCLUDED_TOTAL_WORDS,
+    )
+    if total_amt is None:
+        total_amt = _extract_labeled_amount(
+            lines,
+            ("amount paid", "total due", "total", "net pay", "salary"),
+            exclude=_EXCLUDED_TOTAL_WORDS,
+        )
 
     if total_amt is None:
         decimal_nums = []
@@ -140,13 +183,10 @@ def parse_receipt_text(raw_text: str, filename: str = "") -> Dict[str, Any]:
         for ln in lines:
             if any(skip in ln.lower() for skip in _SKIP_LINE_WORDS):
                 continue
-            for token in _MONEY_RE.findall(ln):
-                val = float(token.replace(",", ""))
-                if _is_pin_or_id(token, val):
-                    continue
+            for val, is_fmt in _extract_line_amounts(ln):
                 if 1.0 <= val <= 1e7:
                     all_nums.append(val)
-                    if "." in token:
+                    if is_fmt:
                         decimal_nums.append(val)
         total_amt = max(decimal_nums) if decimal_nums else (max(all_nums) if all_nums else 0.0)
 
@@ -161,19 +201,22 @@ def parse_receipt_text(raw_text: str, filename: str = "") -> Dict[str, Any]:
         if any(kw in low for kw in kws):
             detected_cat = cat
             break
+    if detected_cat == "Operations" and any(k in low for k in ("upi transaction id", "google pay", "phonepe", "paytm", "paid to", "sent to")):
+        detected_cat = "UPI Transfer"
 
     payment = "Bank Transfer"
-    if any(k in low for k in ("visa", "mastercard", "card", "credit", "debit")):
-        payment = "Corporate Card"
-    elif any(k in low for k in ("upi", "gpay", "phonepe", "paytm")):
+    if any(k in low for k in ("upi", "gpay", "google pay", "phonepe", "paytm", "bhim")):
         payment = "UPI / Instant"
+    elif any(k in low for k in ("visa", "mastercard", "rupay", "amex", "credit card", "debit card", "card")):
+        payment = "Card"
     elif "cash" in low:
         payment = "Cash"
 
     vendor = "Document Extract"
-    for ln in lines[:5]:
-        if len(ln) >= 3 and not re.match(r"^(invoice|receipt|tax|bill|date|total)\b", ln, re.I):
-            vendor = ln[:80]
+    for ln in lines[:8]:
+        if len(ln) >= 3 and not re.match(r"^(tax invoice|invoice|receipt|bill of supply|cash memo|retail invoice|welcome to|gstin|cin|pan|bill|date|total|page)\b", ln, re.I):
+            cleaned_v = re.sub(r"^(?:to|paid to|from)\s*[:\-]?\s+", "", ln, flags=re.I).strip()
+            vendor = (cleaned_v or ln)[:80]
             break
 
     masked_vendor, red1 = mask_pii_text(vendor, enabled=True)

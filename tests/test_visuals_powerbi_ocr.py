@@ -171,3 +171,86 @@ class TestOfflineReceiptOcr:
         assert pdf_res["ocr_engine"].startswith("PyPDF")
         assert pdf_res["txn_date"] == "2026-06-18"
         assert pdf_res["expense"] == pytest.approx(9500.0)
+
+    def test_universal_real_world_bills_parsing(self):
+        # 1. Indian Hospital Bill with 6-digit PIN code & stacked columnar totals
+        hosp = parse_receipt_text(
+            "Chettinad Super Speciality Hospital\n"
+            "Rajiv Gandhi Salai, Tamil Nadu - 603103\n"
+            "Bill Date: 12-08-2026 02:58 PM\n"
+            "Dr. MAHESH T - General Medicine OP BILL\n"
+            "Net Total\nService Tax\nTotal Amount\n600.00\n0.00\n600.00\n",
+            filename="hosp.jpg",
+        )
+        assert hosp["expense"] == pytest.approx(600.0)
+        assert hosp["tax_amount"] == pytest.approx(0.0)
+        assert hosp["category"] == "Healthcare"
+        assert hosp["txn_date"] == "2026-08-12"
+
+        # 2. Restaurant GST Bill with CGST + SGST + Sub Total vs Grand Total
+        rest = parse_receipt_text(
+            "TAX INVOICE\n"
+            "Saravana Bhavan\n"
+            "Date: 02.09.2026\n"
+            "Sub Total: 500.00\n"
+            "CGST 2.5%: 12.50\n"
+            "SGST 2.5%: 12.50\n"
+            "Grand Total: 525.00\n"
+            "Paid via UPI\n",
+            filename="lunch.jpg",
+        )
+        assert rest["vendor_name"] == "Saravana Bhavan"
+        assert rest["expense"] == pytest.approx(525.0)
+        assert rest["tax_amount"] == pytest.approx(25.0)
+        assert rest["category"] == "Groceries & Dining"
+        assert rest["payment_method"] == "UPI / Instant"
+        assert rest["txn_date"] == "2026-09-02"
+
+        # 3. Supermarket Bill with Discount + Cash Tendered > Net Payable
+        mart = parse_receipt_text(
+            "Dmart Retail Mart\n"
+            "14-Oct-2026\n"
+            "Sub Total: 1450.00\n"
+            "Total Savings: 150.00\n"
+            "Net Payable: 1300.00\n"
+            "Cash Tendered: 2000.00\n"
+            "Change Due: 700.00\n",
+            filename="mart.jpg",
+        )
+        assert mart["expense"] == pytest.approx(1300.0)
+        assert mart["category"] == "Groceries & Dining"
+        assert mart["payment_method"] == "Cash"
+        assert mart["txn_date"] == "2026-10-14"
+
+        # 4. Fuel Pump Receipt
+        fuel = parse_receipt_text(
+            "Indian Oil Petrol Station\n"
+            "2026-11-05\n"
+            "MS Petrol 10L\n"
+            "HSN: 271012\n"
+            "Total Amount: Rs. 1025.50\n"
+            "Card Payment Visa\n",
+            filename="fuel.jpg",
+        )
+        assert fuel["expense"] == pytest.approx(1025.50)
+        assert fuel["category"] == "Travel"
+        assert fuel["payment_method"] == "Card"
+
+        # 5. Google Pay / UPI Transfer Screenshot
+        gpay = parse_receipt_text(
+            "To RAJESH R\n"
+            "·1,965\n"
+            "Completed\n"
+            "7 Nov 2026, 9:20 pm\n"
+            "Bank of India 1759\n"
+            "Payment of R1,965 completed\n"
+            "UPI transaction ID\n"
+            "631120726829\n"
+            "Google Pay\n",
+            filename="gpay.jpg",
+        )
+        assert gpay["vendor_name"] == "RAJESH R"
+        assert gpay["expense"] == pytest.approx(1965.0)
+        assert gpay["txn_date"] == "2026-11-07"
+        assert gpay["payment_method"] == "UPI / Instant"
+        assert gpay["category"] == "UPI Transfer"
