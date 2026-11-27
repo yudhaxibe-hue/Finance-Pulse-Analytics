@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  APP_VERSION: "1.3.1"
+  APP_VERSION: "1.3.2"
 
 jobs:
   macos-build:
@@ -289,7 +289,7 @@ jobs:
           app_ver = sys.argv[3]
           sync_url = (os.environ.get("SYNC_URL") or "").strip().rstrip("/")
           dist = Path("release-dist")
-          dl_base = f"https://github.com/{repo}/releases/download/v1.0.0"
+          dl_base = f"https://github.com/{repo}/releases/download/v{app_ver}"
 
           def sha256_of(fname: str) -> str:
               p = dist / fname
