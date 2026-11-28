@@ -31,8 +31,16 @@ logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [FINANCE-PULSE] %(
 logger = logging.getLogger("FinancePulse.Launcher")
 
 
-def find_free_port(host: str = "127.0.0.1") -> int:
-    """Return an available ephemeral TCP port on loopback."""
+def find_free_port(host: str = "127.0.0.1", preferred_port: int = 0) -> int:
+    """Return preferred_port if available, otherwise an available ephemeral TCP port on loopback."""
+    if preferred_port and preferred_port > 0:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.bind((host, int(preferred_port)))
+                probe.listen(1)
+                return int(probe.getsockname()[1])
+        except OSError:
+            pass
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind((host, 0))
         sock.listen(1)
@@ -364,7 +372,8 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     bind_host = "0.0.0.0" if args.public and args.host == "127.0.0.1" else args.host
     probe_host = "127.0.0.1" if bind_host == "0.0.0.0" else bind_host
-    port = args.port if args.port > 0 else find_free_port(probe_host)
+    preferred = 5055 if (args.admin and args.port == 0) else 0
+    port = args.port if args.port > 0 else find_free_port(probe_host, preferred_port=preferred)
     logger.info("Starting %s on http://%s:%s", config.APP_NAME, bind_host, port)
     if bind_host == "0.0.0.0":
         logger.info("LAN Wireless Sync URL: http://%s:%s", _lan_ipv4(), port)

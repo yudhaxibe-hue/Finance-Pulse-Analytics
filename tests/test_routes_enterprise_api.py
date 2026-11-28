@@ -520,3 +520,44 @@ class TestCopilotEndpointsPowerBiApiAndAdminBackups:
         assert clr.status_code == 200
         d3 = c.get("/user/dashboard").data.decode("utf-8")
         assert "No financial data has been imported yet" in d3
+
+    def test_privacy_safe_telemetry_sync_and_admin_dashboard(self, isolated_env):
+        import app
+        from database.db import connect
+
+        c = app.app.test_client()
+        # Mobile/remote client sends install + register telemetry (zero passwords or ledger rows)
+        payload = {
+            "install_id": "and-rishith-001",
+            "platform": "android",
+            "app_version": "1.3.8",
+            "events": [
+                {"id": "ev-inst-1", "event": "install", "name": "", "email": ""},
+                {"id": "ev-reg-1", "event": "register", "name": "Rishith", "email": "rishith@example.com"},
+                {"id": "ev-reg-1", "event": "register", "name": "Rishith", "email": "rishith@example.com"},  # duplicate idempotency check
+            ],
+        }
+        res = c.post("/api/v1/telemetry/sync", json=payload)
+        assert res.status_code == 200
+        body = res.get_json()
+        assert body["ok"] is True
+        assert body["accepted"] == 2  # deduped duplicate ev-reg-1 cleanly
+
+        conn = connect()
+        rc = conn.execute("SELECT * FROM remote_clients WHERE install_id='and-rishith-001'").fetchone()
+        logs = conn.execute("SELECT action, detail FROM audit_logs WHERE detail LIKE '%rishith@example.com%'").fetchall()
+        conn.close()
+        assert rc is not None and rc["platform"] == "android" and rc["account_email"] == "rishith@example.com"
+        assert len(logs) == 1 and logs[0]["action"] == "user_registered"
+
+        # Admin portal surfaces Remote Installs count + Rishith account cleanly across dashboard & users
+        admin = _make_admin_client()
+        adash = admin.get("/admin/dashboard")
+        assert adash.status_code == 200
+        assert b"Remote installs" in adash.data
+        assert b"rishith@example.com" in adash.data
+        assert b"Android 1" in adash.data
+
+        ausers = admin.get("/admin/users")
+        assert ausers.status_code == 200
+        assert b"rishith@example.com" in ausers.data

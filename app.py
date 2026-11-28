@@ -3,6 +3,7 @@ import io
 import json
 import os
 import re
+import secrets
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -977,36 +978,6 @@ def user_data():
                         pass
                     session.pop("staged_import", None)
                     audit("dataset_imported", staged["filename"])
-                    if g.user and not cleaned.empty:
-                        sync_rows = [
-                            {
-                                "date": r["txn_date"].strftime("%Y-%m-%d"),
-                                "transaction_id": r["transaction_id"],
-                                "transaction_type": r["transaction_type"],
-                                "category": r["category"],
-                                "product": r["product"],
-                                "department": r["department"],
-                                "region": r["region"],
-                                "revenue": float(r["revenue"]),
-                                "expense": float(r["expense"]),
-                                "cost": float(r["cost"]),
-                                "quantity": float(r["quantity"]),
-                                "unit_price": float(r["unit_price"]),
-                                "investment": float(r["investment"]),
-                                "notes": r["notes"],
-                            }
-                            for _, r in cleaned.iterrows()
-                        ]
-                        imp_sig = hashlib.sha1(
-                            f"{g.user['email']}:{staged['filename']}:{datetime.utcnow().isoformat()}".encode("utf-8")
-                        ).hexdigest()[:16]
-                        updater.mirror_dataset_import(
-                            g.user["email"],
-                            staged["filename"],
-                            f"desktop-{imp_sig}",
-                            sync_rows,
-                            server_port=_local_server_port(),
-                        )
                     flash(
                         f"{len(cleaned)} rows imported successfully. {excluded} invalid rows were excluded.",
                         "success",
@@ -1113,34 +1084,6 @@ def _persist_single_record(ws_id, item, source_label="manual_entry.csv", audit_e
     report["entry_source"] = source_label
     persist(cleaned, source_label, report, excluded, ws_id, enrich_ml=True)
     audit(audit_event, f"{item.get('product') or item.get('category') or 'Entry'}")
-    if g.user and not cleaned.empty:
-        sync_rows = [
-            {
-                "date": r["txn_date"].strftime("%Y-%m-%d"),
-                "transaction_id": r["transaction_id"],
-                "transaction_type": r["transaction_type"],
-                "category": r["category"],
-                "product": r["product"],
-                "department": r["department"],
-                "region": r["region"],
-                "revenue": float(r["revenue"]),
-                "expense": float(r["expense"]),
-                "cost": float(r["cost"]),
-                "quantity": float(r["quantity"]),
-                "unit_price": float(r["unit_price"]),
-                "investment": float(r["investment"]),
-                "notes": r["notes"],
-            }
-            for _, r in cleaned.iterrows()
-        ]
-        imp_sig = hashlib.sha1(f"{g.user['email']}:{source_label}:{datetime.utcnow().isoformat()}".encode("utf-8")).hexdigest()[:16]
-        updater.mirror_dataset_import(
-            g.user["email"],
-            source_label,
-            f"desktop-{imp_sig}",
-            sync_rows,
-            server_port=_local_server_port(),
-        )
     return True, "Transaction added and scored via Random Forest.", len(cleaned)
 
 
@@ -1514,8 +1457,22 @@ def admin_setup():
 @admin_required
 def admin_dashboard():
     conn = connect()
+    rc_rows = [dict(r) for r in conn.execute("SELECT * FROM remote_clients ORDER BY last_seen_at DESC LIMIT 25")]
+    all_rc = conn.execute("SELECT platform FROM remote_clients").fetchall()
+    p_counts = {"android": 0, "windows": 0, "macos": 0}
+    for r in all_rc:
+        plat = str(r["platform"] or "").lower()
+        if "android" in plat or "mobile" in plat:
+            p_counts["android"] += 1
+        elif "win" in plat:
+            p_counts["windows"] += 1
+        elif "darwin" in plat or "mac" in plat:
+            p_counts["macos"] += 1
+
     stats = {
         "users": conn.execute("SELECT COUNT(*) FROM users WHERE role='user'").fetchone()[0],
+        "remote_installs": len(all_rc),
+        "platforms": p_counts,
         "datasets": conn.execute("SELECT COUNT(*) FROM imports WHERE workspace_id IS NOT NULL").fetchone()[0],
         "records": conn.execute("SELECT COUNT(*) FROM financial_transactions WHERE workspace_id IS NOT NULL").fetchone()[0],
     }
@@ -1526,7 +1483,16 @@ def admin_dashboard():
         )
     ]
     conn.close()
-    return render_template("admin_dashboard.html", stats=stats, imports=imports, portal="admin")
+    port = _local_server_port() or 5055
+    receiver_url = f"http://127.0.0.1:{port}"
+    return render_template(
+        "admin_dashboard.html",
+        stats=stats,
+        imports=imports,
+        remote_clients=rc_rows,
+        receiver_url=receiver_url,
+        portal="admin",
+    )
 
 
 @app.route("/admin/users", methods=["GET", "POST"])
@@ -1569,8 +1535,14 @@ def admin_users():
             ORDER BY u.created_at DESC"""
         )
     ]
+    remote_accounts = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM remote_clients WHERE account_email IS NOT NULL AND account_email != '' ORDER BY last_seen_at DESC LIMIT 100"
+        )
+    ]
     conn.close()
-    return render_template("admin_users.html", users=users, portal="admin")
+    return render_template("admin_users.html", users=users, remote_accounts=remote_accounts, portal="admin")
 
 
 @app.route("/admin/datasets")
@@ -1637,7 +1609,7 @@ def admin_audit():
         "imports": ("dataset_imported", "receipt_imported", "enterprise_sample_loaded", "transaction_added"),
         "scenarios": ("scenario_created",),
         "governance": ("admin_created", "settings_updated", "user_status_changed", "report_exported", "backup_created"),
-        "auth": ("user_registered", "user_login", "admin_login", "logout"),
+        "auth": ("user_registered", "user_login", "app_install", "admin_login", "logout"),
     }
     conn = connect()
     query = """SELECT l.id, l.action, l.detail, l.created_at, u.name AS user_name, u.email AS user_email, u.role AS user_role
@@ -1745,8 +1717,95 @@ def admin_settings():
 
 
 # ---------------------------------------------------------------------------
-# Central Wireless Sync JSON API (Mobile Android APK & Desktop Mirrors)
+# Privacy-Safe Telemetry Receiver & Central Sync JSON API
 # ---------------------------------------------------------------------------
+
+@app.route("/api/v1/telemetry/sync", methods=["POST", "OPTIONS"])
+def api_v1_telemetry_sync():
+    """Receive privacy-safe install, registration, and login pings (never financial transaction rows)."""
+    if request.method == "OPTIONS":
+        return ("", 204)
+    data = request.get_json(silent=True) or {}
+    install_id = str(data.get("install_id") or "").strip()[:80]
+    platform = str(data.get("platform") or "unknown").strip()[:40] or "unknown"
+    app_version = str(data.get("app_version") or "").strip()[:24]
+    events = data.get("events")
+    if not install_id or not isinstance(events, list):
+        return jsonify({"ok": False, "error": "Provide install_id and events list."}), 400
+
+    now = datetime.utcnow().isoformat()
+    conn = connect()
+    accepted = 0
+    try:
+        latest_email = None
+        latest_name = None
+        latest_ev_name = "install"
+        for ev in events[:50]:
+            if not isinstance(ev, dict):
+                continue
+            ev_id = str(ev.get("id") or "").strip()[:120]
+            ev_type = str(ev.get("event") or "install").strip().lower()[:32]
+            ev_email = str(ev.get("email") or "").strip().lower()[:160]
+            ev_name = str(ev.get("name") or "").strip()[:120]
+            if ev_id:
+                seen = conn.execute("SELECT 1 FROM telemetry_events WHERE event_id=?", (ev_id,)).fetchone()
+                if seen:
+                    continue
+                conn.execute(
+                    "INSERT INTO telemetry_events(event_id, install_id, received_at) VALUES(?,?,?)",
+                    (ev_id, install_id, now),
+                )
+
+            latest_ev_name = ev_type
+            if ev_email:
+                latest_email = ev_email
+            if ev_name:
+                latest_name = ev_name
+
+            if ev_type == "register" and "@" in ev_email:
+                existing = conn.execute("SELECT id FROM users WHERE email=?", (ev_email,)).fetchone()
+                uid = existing["id"] if existing else None
+                if uid:
+                    conn.execute("UPDATE users SET last_activity_at=? WHERE id=?", (now, uid))
+                conn.execute(
+                    "INSERT INTO audit_logs(user_id,action,detail,created_at) VALUES(?,?,?,?)",
+                    (uid, "user_registered", f"{ev_name or ev_email.split('@')[0]} ({ev_email}) [remote:{platform} v{app_version}]", now),
+                )
+                accepted += 1
+            elif ev_type == "login" and "@" in ev_email:
+                u = conn.execute("SELECT id FROM users WHERE email=?", (ev_email,)).fetchone()
+                uid = u["id"] if u else None
+                if uid:
+                    conn.execute("UPDATE users SET last_activity_at=? WHERE id=?", (now, uid))
+                conn.execute(
+                    "INSERT INTO audit_logs(user_id,action,detail,created_at) VALUES(?,?,?,?)",
+                    (uid, "user_login", f"{ev_email} [remote:{platform} v{app_version}]", now),
+                )
+                accepted += 1
+            else:
+                conn.execute(
+                    "INSERT INTO audit_logs(user_id,action,detail,created_at) VALUES(?,?,?,?)",
+                    (None, "app_install", f"Device {install_id[:12]} [{platform} v{app_version}]", now),
+                )
+                accepted += 1
+
+        conn.execute(
+            """INSERT INTO remote_clients(install_id, platform, app_version, account_email, account_name, last_event, first_seen_at, last_seen_at)
+               VALUES(?,?,?,?,?,?,?,?)
+               ON CONFLICT(install_id) DO UPDATE SET
+                 platform=excluded.platform,
+                 app_version=COALESCE(NULLIF(excluded.app_version,''), remote_clients.app_version),
+                 account_email=COALESCE(NULLIF(excluded.account_email,''), remote_clients.account_email),
+                 account_name=COALESCE(NULLIF(excluded.account_name,''), remote_clients.account_name),
+                 last_event=excluded.last_event,
+                 last_seen_at=excluded.last_seen_at""",
+            (install_id, platform, app_version, latest_email, latest_name, latest_ev_name, now, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "accepted": accepted, "install_id": install_id}), 200
+
 
 @app.route("/api/v1/auth/register", methods=["POST", "OPTIONS"])
 def api_v1_register():

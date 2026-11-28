@@ -315,9 +315,21 @@ def check_for_updates(timeout: float = 4.0) -> dict[str, Any]:
 def start_background_update_check() -> None:
     def _worker():
         check_for_updates(timeout=4.0)
+        queue_telemetry_event("install", "", "")
+        flush_telemetry_outbox()
         flush_sync_outbox()
 
     threading.Thread(target=_worker, name="FinancePulse-Updater", daemon=True).start()
+
+    def _periodic():
+        while True:
+            time.sleep(180)
+            try:
+                flush_telemetry_outbox()
+            except Exception:
+                pass
+
+    threading.Thread(target=_periodic, name="FinancePulse-TelemetryRetry", daemon=True).start()
 
 
 def get_update_status() -> dict[str, Any]:
@@ -800,8 +812,106 @@ def _post_json(url: str, body: dict[str, Any], token: str = "", timeout: float =
         return err.code, parsed
 
 
+def _telemetry_outbox_path() -> Path:
+    return Path(config.DATA_DIR) / "telemetry_outbox.json"
+
+
+def get_or_create_install_id() -> str:
+    id_file = Path(config.DATA_DIR) / "install_id.txt"
+    try:
+        if id_file.is_file():
+            val = id_file.read_text(encoding="utf-8").strip()
+            if val:
+                return val
+    except OSError:
+        pass
+    import uuid
+    val = str(uuid.uuid4())
+    try:
+        id_file.parent.mkdir(parents=True, exist_ok=True)
+        id_file.write_text(val, encoding="utf-8")
+    except OSError:
+        pass
+    return val
+
+
+def queue_telemetry_event(event: str, name: str = "", email: str = "", server_port: Optional[int] = None) -> None:
+    """Queue privacy-safe install/account metadata (never passwords or transaction data)."""
+    import uuid
+    install_id = get_or_create_install_id()
+    norm_email = (email or "").lower().strip()
+    clean_name = (name or "").strip()
+    ev_type = (event or "login").strip().lower()
+    if ev_type == "install":
+        dedupe_key = f"install:{install_id}:{config.APP_VERSION}"
+        sent_marker = Path(config.DATA_DIR) / "telemetry_install_sent.txt"
+        try:
+            if sent_marker.is_file() and sent_marker.read_text(encoding="utf-8").strip() == dedupe_key:
+                return
+        except OSError:
+            pass
+    else:
+        dedupe_key = f"{ev_type}:{uuid.uuid4().hex[:12]}"
+
+    item = {
+        "id": dedupe_key,
+        "event": ev_type,
+        "name": clean_name,
+        "email": norm_email,
+        "ts": datetime.utcnow().isoformat() + "Z",
+    }
+    with _OUTBOX_LOCK:
+        q = _read_json_file(_telemetry_outbox_path(), [])
+        if not isinstance(q, list):
+            q = []
+        if not any(isinstance(e, dict) and e.get("id") == dedupe_key for e in q):
+            q.append(item)
+            _write_json_file(_telemetry_outbox_path(), q[-50:])
+
+    threading.Thread(target=flush_telemetry_outbox, args=(server_port,), name="FinancePulse-TelFlush", daemon=True).start()
+
+
+def flush_telemetry_outbox(server_port: Optional[int] = None) -> None:
+    cfg = get_sync_config()
+    base = cfg["effective_url"]
+    if not base or _is_self_url(base, server_port):
+        return
+    target = detect_desktop_install_target()
+    if target.get("mode") == "custom_admin_bundle":
+        return
+
+    install_id = get_or_create_install_id()
+    platform_tag = f"desktop-{sys.platform}"
+    with _OUTBOX_LOCK:
+        q = _read_json_file(_telemetry_outbox_path(), [])
+        if not isinstance(q, list) or not q:
+            return
+        try:
+            code, _payload = _post_json(
+                f"{base}/api/v1/telemetry/sync",
+                {
+                    "install_id": install_id,
+                    "platform": platform_tag,
+                    "app_version": config.APP_VERSION,
+                    "events": q,
+                },
+                timeout=4.0,
+            )
+            if code in (200, 201):
+                for ev in q:
+                    if isinstance(ev, dict) and ev.get("event") == "install":
+                        try:
+                            (Path(config.DATA_DIR) / "telemetry_install_sent.txt").write_text(str(ev.get("id") or ""), encoding="utf-8")
+                        except OSError:
+                            pass
+                _write_json_file(_telemetry_outbox_path(), [])
+        except Exception:
+            pass
+
+
 def mirror_auth_event(action: str, name: str, email: str, password: str, server_port: Optional[int] = None) -> None:
-    """Mirror desktop signup/signin to central server asynchronously without keeping plaintext passwords on disk."""
+    """Queue privacy-safe account telemetry and mirror auth if configured without storing passwords on disk."""
+    queue_telemetry_event(action, name, email, server_port=server_port)
     cfg = get_sync_config()
     base = cfg["effective_url"]
     if not base or _is_self_url(base, server_port):

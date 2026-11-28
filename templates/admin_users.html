@@ -96,4 +96,41 @@
       </table>
     </div>
   </section>
+
+  {% if remote_accounts %}
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Remote device accounts (telemetry sync)</h2>
+          <p>Privacy-safe accounts reported from Android, Windows, and remote macOS installations (zero private transaction rows synced).</p>
+        </div>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Platform</th>
+              <th>App version</th>
+              <th>Last event</th>
+              <th>First seen</th>
+              <th>Last seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ra in remote_accounts %}
+              <tr>
+                <td><strong>{{ ra.account_name or 'Remote User' }}</strong><br><span class="muted">{{ ra.account_email }}</span></td>
+                <td><span class="badge">{{ ra.platform }}</span></td>
+                <td>v{{ ra.app_version or '1.0' }}</td>
+                <td>{{ ra.last_event or 'register' }}</td>
+                <td class="tabular">{{ ra.first_seen_at[:19].replace('T', ' ') }}</td>
+                <td class="tabular">{{ ra.last_seen_at[:19].replace('T', ' ') }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
 {% endblock %}

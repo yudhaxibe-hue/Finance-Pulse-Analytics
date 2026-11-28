@@ -8,6 +8,11 @@
       <strong class="kpi-value">{{ stats.users }}</strong>
     </div>
     <div class="kpi-cell">
+      <span class="kpi-label">Remote installs</span>
+      <strong class="kpi-value">{{ stats.remote_installs }}</strong>
+      <span class="muted" style="font-size:11px;">Android {{ stats.platforms.android }} · Win {{ stats.platforms.windows }} · Mac {{ stats.platforms.macos }}</span>
+    </div>
+    <div class="kpi-cell">
       <span class="kpi-label">Datasets</span>
       <strong class="kpi-value">{{ stats.datasets }}</strong>
     </div>
@@ -15,6 +20,47 @@
       <span class="kpi-label">Imported records</span>
       <strong class="kpi-value">{{ stats.records }}</strong>
     </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Remote app installs &amp; sync receiver</h2>
+        <p>Privacy-safe device &amp; account registry (tracks installs, signups, and logins across Android, Windows, and macOS—zero private transaction rows are collected).</p>
+      </div>
+      <span class="badge accent">{{ receiver_url }}</span>
+    </div>
+    {% if remote_clients %}
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Platform</th>
+              <th>Version</th>
+              <th>Account</th>
+              <th>Last Event</th>
+              <th>Last Seen (UTC)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for rc in remote_clients %}
+              <tr>
+                <td><span class="badge">{{ rc.platform }}</span></td>
+                <td>v{{ rc.app_version or '1.0' }}</td>
+                <td>
+                  <strong>{{ rc.account_name or 'Anonymous install' }}</strong>
+                  {% if rc.account_email %}<br><span class="muted">{{ rc.account_email }}</span>{% endif %}
+                </td>
+                <td>{{ rc.last_event or 'install' }}</td>
+                <td class="tabular">{{ rc.last_seen_at[:19].replace('T', ' ') }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No remote client pings received yet. Point your Cloudflare Tunnel or Tailscale Funnel to <code>{{ receiver_url }}</code> and set <code>FINANCE_PULSE_SYNC_URL</code> in GitHub repository variables.</p>
+    {% endif %}
   </section>
 
   <section class="panel">

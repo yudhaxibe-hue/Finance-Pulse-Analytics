@@ -74,6 +74,21 @@ def initialize():
       id INTEGER PRIMARY KEY, name TEXT NOT NULL, assumptions_json TEXT NOT NULL,
       result_json TEXT NOT NULL, created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS remote_clients (
+      install_id TEXT PRIMARY KEY,
+      platform TEXT NOT NULL,
+      app_version TEXT,
+      account_email TEXT,
+      account_name TEXT,
+      last_event TEXT,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS telemetry_events (
+      event_id TEXT PRIMARY KEY,
+      install_id TEXT,
+      received_at TEXT NOT NULL
+    );
     ''')
     _add_column(conn, "imports", "workspace_id INTEGER")
     _add_column(conn, "imports", "file_type TEXT")

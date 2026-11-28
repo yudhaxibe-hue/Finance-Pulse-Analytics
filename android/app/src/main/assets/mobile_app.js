@@ -9,6 +9,10 @@
   const STORAGE_SYNC_OUTBOX = "fp_sync_outbox_v2";
   const STORAGE_SYNC_OVERRIDE = "fp_sync_override_v2";
   const STORAGE_SYNC_META = "fp_sync_meta_v2";
+  const STORAGE_INSTALL_ID = "fp_install_id_v1";
+  const STORAGE_TELEMETRY_OUTBOX = "fp_telemetry_outbox_v1";
+  const STORAGE_INSTALL_SENT = "fp_install_sent_v1";
+  const MOBILE_APP_VERSION = "1.3.8";
   const DEFAULT_CFG = { currency: "INR", marginThreshold: 15, anomalyIqr: 1.5 };
 
   let state = {
@@ -1479,7 +1483,88 @@
     flushSyncOutbox();
   }
 
+  function getOrCreateInstallId() {
+    try {
+      let id = localStorage.getItem(STORAGE_INSTALL_ID);
+      if (id && id.trim()) return id.trim();
+      id = "and-" + Math.random().toString(36).slice(2, 10) + "-" + Date.now().toString(36);
+      localStorage.setItem(STORAGE_INSTALL_ID, id);
+      return id;
+    } catch (_e) {
+      return "and-ephemeral";
+    }
+  }
+
+  let flushingTelemetry = false;
+  async function flushTelemetryOutbox() {
+    if (flushingTelemetry) return;
+    const base = getEffectiveSyncUrl();
+    if (!base) return;
+    const queue = readJsonStorage(STORAGE_TELEMETRY_OUTBOX, []);
+    if (!Array.isArray(queue) || !queue.length) return;
+    flushingTelemetry = true;
+    const meta = readJsonStorage(STORAGE_SYNC_META, {});
+    try {
+      const res = await callCentralApi(
+        "POST",
+        "/api/v1/telemetry/sync",
+        {
+          install_id: getOrCreateInstallId(),
+          platform: "android",
+          app_version: (state.updateInfo && state.updateInfo.installedVersion) || MOBILE_APP_VERSION,
+          events: queue.slice(-40),
+        }
+      );
+      if (res.ok) {
+        queue.forEach((ev) => {
+          if (ev && ev.event === "install" && ev.id) {
+            try { localStorage.setItem(STORAGE_INSTALL_SENT, ev.id); } catch (_e) {}
+          }
+          if (ev && ev.email && (ev.event === "register" || ev.event === "login")) {
+            markUserSynced(ev.email, true);
+          }
+        });
+        writeJsonStorage(STORAGE_TELEMETRY_OUTBOX, []);
+        meta.lastSyncAt = new Date().toLocaleTimeString();
+        meta.lastError = "";
+        writeJsonStorage(STORAGE_SYNC_META, meta);
+      }
+    } finally {
+      flushingTelemetry = false;
+      renderOperatorSyncStatus();
+    }
+  }
+
+  function queueTelemetryEvent(eventType, name, email) {
+    const installId = getOrCreateInstallId();
+    const ver = (state.updateInfo && state.updateInfo.installedVersion) || MOBILE_APP_VERSION;
+    const ev = String(eventType || "install").toLowerCase();
+    const normEmail = String(email || "").toLowerCase().trim();
+    const cleanName = String(name || "").trim();
+    let dedupeId = ev + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7);
+    if (ev === "install") {
+      dedupeId = "install:" + installId + ":" + ver;
+      try {
+        if (localStorage.getItem(STORAGE_INSTALL_SENT) === dedupeId) return;
+      } catch (_e) {}
+    }
+    const queue = readJsonStorage(STORAGE_TELEMETRY_OUTBOX, []);
+    const arr = Array.isArray(queue) ? queue : [];
+    if (!arr.some((x) => x && x.id === dedupeId)) {
+      arr.push({
+        id: dedupeId,
+        event: ev,
+        name: cleanName,
+        email: normEmail,
+        ts: new Date().toISOString(),
+      });
+      writeJsonStorage(STORAGE_TELEMETRY_OUTBOX, arr.slice(-40));
+    }
+    flushTelemetryOutbox();
+  }
+
   async function syncAuthWithCentral(mode, name, email, password) {
+    queueTelemetryEvent(mode, name, email);
     if (!getEffectiveSyncUrl()) return;
     const endpoint = mode === "register" ? "/api/v1/auth/register" : "/api/v1/auth/login";
     const res = await callCentralApi("POST", endpoint, {
@@ -1506,6 +1591,7 @@
   function renderUpdateUi(info) {
     if (!info || typeof info !== "object") return;
     state.updateInfo = info;
+    flushTelemetryOutbox();
     const verBtn = document.getElementById("aboutSecretTrigger");
     if (verBtn && info.activeOtaVersion) {
       verBtn.textContent = "Engine v" + info.activeOtaVersion + " · Offline & Auto-Sync Ready";
@@ -1678,7 +1764,6 @@
     if (window.FINANCE_PULSE_SAMPLE_CSV) {
       const parsed = parseCsv(window.FINANCE_PULSE_SAMPLE_CSV);
       saveWorkspace(parsed, "finance_pulse_sample.csv");
-      if (state.user) queueDatasetSync(state.user.email, "finance_pulse_sample.csv", parsed);
       switchTab("overview");
       showNotice("Loaded 30-month sample dataset (120 transactions).");
     }
@@ -1741,7 +1826,6 @@
   function loadEnterprise10kIntoWorkspace() {
     const rows = generateEnterprise10kRows();
     saveWorkspace(rows, "enterprise_10k_ledger.csv");
-    if (state.user) queueDatasetSync(state.user.email, "enterprise_10k_ledger.csv", rows.slice(0, 2000));
     switchTab("overview");
     showNotice("Generated & loaded 10,000-row enterprise dataset locally.");
   }
@@ -2540,7 +2624,6 @@
         };
         const updated = state.rows.concat([row]);
         saveWorkspace(updated, state.rows.length ? state.meta.source : "manual_ledger.csv");
-        if (state.user) queueDatasetSync(state.user.email, "manual_entry.csv", [row]);
         if (qeModal) qeModal.classList.add("hidden");
         qeForm.reset();
         switchTab("overview");
@@ -2610,7 +2693,6 @@
         ev.target.value = "";
         if (parsed.length) {
           saveWorkspace(parsed, file.name);
-          if (state.user) queueDatasetSync(state.user.email, file.name, parsed);
           switchTab("overview");
           showNotice("Imported " + parsed.length + " records from " + file.name + ".");
         } else {
@@ -2770,4 +2852,10 @@
   } else {
     renderAll();
   }
+  queueTelemetryEvent("install", state.user ? state.user.name : "", state.user ? state.user.email : "");
+  window.addEventListener("online", () => flushTelemetryOutbox());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") flushTelemetryOutbox();
+  });
+  setInterval(() => flushTelemetryOutbox(), 45000);
 })();

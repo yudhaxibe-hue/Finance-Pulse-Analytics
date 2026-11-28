@@ -74,6 +74,25 @@ jobs:
           kill "$APP_PID" || true
           wait "$APP_PID" || true
 
+      - name: Code Sign macOS Bundle (when Developer ID secret configured)
+        env:
+          APPLE_SIGNING_CERT_P12: ${{ secrets.APPLE_SIGNING_CERT_P12 }}
+          APPLE_SIGNING_PASSWORD: ${{ secrets.APPLE_SIGNING_PASSWORD }}
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+        run: |
+          if [ -n "$APPLE_SIGNING_CERT_P12" ] && [ -n "$APPLE_DEVELOPER_ID" ]; then
+            echo "$APPLE_SIGNING_CERT_P12" | base64 --decode > cert.p12
+            security create-keychain -p ci-temp-pass build.keychain
+            security default-keychain -s build.keychain
+            security unlock-keychain -p ci-temp-pass build.keychain
+            security import cert.p12 -k build.keychain -P "$APPLE_SIGNING_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci-temp-pass build.keychain
+            codesign --deep --force --options runtime --sign "$APPLE_DEVELOPER_ID" dist/FinancePulseAnalytics.app
+            rm -f cert.p12
+          else
+            echo "No APPLE_SIGNING_CERT_P12 configured; keeping ad-hoc codesign."
+          fi
+
       - name: Package macOS Archive & Checksum
         run: |
           cd dist
@@ -147,6 +166,21 @@ jobs:
             if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
           }
 
+      - name: Authenticode Sign Windows Executable (when cert secret configured)
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          if ($env:WINDOWS_CERT_PFX_BASE64) {
+            [IO.File]::WriteAllBytes("win_cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64))
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("win_cert.pfx", $env:WINDOWS_CERT_PASSWORD)
+            Set-AuthenticodeSignature -FilePath ".\dist\FinancePulseAnalytics\FinancePulseAnalytics.exe" -Certificate $cert -TimestampServer "http://timestamp.digicert.com"
+            Remove-Item "win_cert.pfx" -Force
+          } else {
+            Write-Host "No WINDOWS_CERT_PFX_BASE64 configured; packaging unsigned ZIP."
+          }
+
       - name: Package Windows Archive & Checksum
         shell: pwsh
         run: |
@@ -194,17 +228,31 @@ jobs:
             "$SDK_MGR" "platforms;android-34" "build-tools;34.0.0" > /dev/null || true
           fi
 
-      - name: Run Android Unit Tests & Build Debug APK
+      - name: Run Android Unit Tests & Build Signed or Debug APK
         working-directory: android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           BUILD_NUM=$((10 + ${{ github.run_number }}))
           chmod +x gradlew
-          ./gradlew testDebugUnitTest assembleDebug "-PversionCode=$BUILD_NUM" "-PversionName=${{ env.APP_VERSION }}" --no-daemon
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/release.jks
+            export ANDROID_KEYSTORE_FILE="$(pwd)/app/release.jks"
+            ./gradlew testDebugUnitTest assembleRelease "-PversionCode=$BUILD_NUM" "-PversionName=${{ env.APP_VERSION }}" --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk ../dist/FinancePulseAnalytics-Android.apk || cp app/build/outputs/apk/release/app-release-unsigned.apk ../dist/FinancePulseAnalytics-Android.apk
+            rm -f app/release.jks
+          else
+            ./gradlew testDebugUnitTest assembleDebug "-PversionCode=$BUILD_NUM" "-PversionName=${{ env.APP_VERSION }}" --no-daemon
+            mkdir -p ../dist
+            cp app/build/outputs/apk/debug/app-debug.apk ../dist/FinancePulseAnalytics-Android.apk
+          fi
 
       - name: Stage APK, OTA Bundle & Checksums
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk dist/FinancePulseAnalytics-Android.apk
           python3 - <<'PY'
           import hashlib
           import zipfile
