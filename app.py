@@ -1491,6 +1491,7 @@ def admin_dashboard():
         imports=imports,
         remote_clients=rc_rows,
         receiver_url=receiver_url,
+        tunnel=updater.get_admin_tunnel_status(port),
         portal="admin",
     )
 
@@ -1713,7 +1714,12 @@ def admin_settings():
         audit("settings_updated")
         flash("System settings saved.", "success")
         return redirect(url_for("admin_settings"))
-    return render_template("settings.html", settings=settings(), portal="admin")
+    return render_template(
+        "settings.html",
+        settings=settings(),
+        tunnel=updater.get_admin_tunnel_status(_local_server_port() or 5055),
+        portal="admin",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2107,15 +2113,66 @@ def system_operator_sync():
             updater.set_sync_override("")
         elif action == "flush_now":
             updater.check_for_updates(timeout=4.0)
+            updater.flush_telemetry_outbox(server_port=_local_server_port())
             updater.flush_sync_outbox(server_port=_local_server_port())
         else:
             ok, normalized = updater.set_sync_override(str(payload.get("url") or ""))
             if not ok:
                 return jsonify({"ok": False, "error": "Enter a valid http:// or https:// server URL."}), 400
             if normalized:
+                updater.flush_telemetry_outbox(server_port=_local_server_port())
                 updater.flush_sync_outbox(server_port=_local_server_port())
         return jsonify({"ok": True, **updater.get_sync_config()})
     return jsonify({"ok": True, **updater.get_sync_config()})
+
+
+@app.route("/api/admin/tunnel/status", methods=["GET"])
+@admin_required
+def admin_tunnel_status():
+    port = _local_server_port() or 5055
+    return jsonify({"ok": True, **updater.get_admin_tunnel_status(port)})
+
+
+@app.route("/api/admin/tunnel/start", methods=["POST"])
+@admin_required
+def admin_tunnel_start():
+    port = _local_server_port() or 5055
+    res = updater.start_admin_quick_tunnel(port=port, wait_seconds=10.0)
+    return jsonify({"ok": bool(res.get("active")), **res}), (200 if res.get("active") else 400)
+
+
+@app.route("/api/admin/tunnel/stop", methods=["POST"])
+@admin_required
+def admin_tunnel_stop():
+    res = updater.stop_admin_tunnel()
+    return jsonify({"ok": True, **res})
+
+
+@app.route("/api/admin/tunnel/test", methods=["POST"])
+@admin_required
+def admin_tunnel_test():
+    import urllib.request
+
+    port = _local_server_port() or 5055
+    status = updater.get_admin_tunnel_status(port)
+    target_base = (status.get("public_url") or status.get("configured_sync_url") or "").strip().rstrip("/")
+    checks = {"local_receiver_ready": True, "public_url": target_base, "public_reachable": False, "detail": ""}
+    conn = connect()
+    try:
+        checks["remote_clients_count"] = conn.execute("SELECT COUNT(*) FROM remote_clients").fetchone()[0]
+    finally:
+        conn.close()
+    if not target_base:
+        checks["detail"] = f"Local receiver listening on 127.0.0.1:{port}; start Quick HTTPS Tunnel or set FINANCE_PULSE_SYNC_URL for 4G/5G reachability."
+        return jsonify({"ok": True, **checks})
+    try:
+        req = urllib.request.Request(f"{target_base}/health", headers={"User-Agent": f"FinancePulseAdmin/{config.APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            checks["public_reachable"] = resp.status == 200
+            checks["detail"] = f"HTTPS tunnel {target_base} responded HTTP {resp.status}."
+    except Exception as exc:
+        checks["detail"] = f"Tunnel check failed for {target_base}: {exc}"
+    return jsonify({"ok": checks["public_reachable"], **checks}), (200 if checks["public_reachable"] else 502)
 
 
 @app.errorhandler(403)

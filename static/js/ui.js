@@ -1073,6 +1073,90 @@
     });
   }
 
+  // ── Admin Over-the-Air HTTPS Tunnel Controls ──
+  const btnStartTunnel = document.getElementById("btnStartAdminTunnel");
+  const btnStopTunnel = document.getElementById("btnStopAdminTunnel");
+  const btnCopyTunnel = document.getElementById("btnCopyAdminTunnelUrl");
+  const btnTestTunnel = document.getElementById("btnTestAdminTunnel");
+  const tunnelStatusEl = document.getElementById("adminTunnelStatusText");
+  let activeTunnelUrl = "";
+
+  function applyTunnelUi(data) {
+    if (!tunnelStatusEl || !data) return;
+    activeTunnelUrl = data.public_url || data.configured_sync_url || "";
+    if (btnStopTunnel) btnStopTunnel.hidden = !data.active;
+    if (btnCopyTunnel) btnCopyTunnel.hidden = !activeTunnelUrl;
+    if (btnStartTunnel && data.cloudflared_installed) {
+      btnStartTunnel.disabled = Boolean(data.active && data.public_url);
+    }
+    if (data.error) {
+      tunnelStatusEl.textContent = `Tunnel error: ${data.error}`;
+    } else if (data.active && data.public_url) {
+      tunnelStatusEl.textContent = `Quick HTTPS Tunnel Active: ${data.public_url} → ${data.receiver_url}`;
+    } else if (data.active) {
+      tunnelStatusEl.textContent = `Tunnel connecting to ${data.receiver_url}…`;
+    } else if (data.configured_sync_url) {
+      tunnelStatusEl.textContent = `Configured GitHub Sync URL: ${data.configured_sync_url} · Local receiver: ${data.receiver_url}`;
+    } else {
+      tunnelStatusEl.textContent = `Local receiver ready on ${data.receiver_url || "http://127.0.0.1:5055"}.`;
+    }
+  }
+
+  if (tunnelStatusEl) {
+    fetch("/api/admin/tunnel/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && d.ok) applyTunnelUi(d); })
+      .catch(() => {});
+  }
+  if (btnStartTunnel) {
+    btnStartTunnel.addEventListener("click", async () => {
+      if (tunnelStatusEl) tunnelStatusEl.textContent = "Starting Cloudflare Quick HTTPS Tunnel (may take ~5s)…";
+      btnStartTunnel.disabled = true;
+      try {
+        const res = await fetch("/api/admin/tunnel/start", { method: "POST" });
+        const d = await res.json();
+        applyTunnelUi(d);
+      } catch (_e) {
+        if (tunnelStatusEl) tunnelStatusEl.textContent = "Failed to start Quick HTTPS Tunnel.";
+        btnStartTunnel.disabled = false;
+      }
+    });
+  }
+  if (btnStopTunnel) {
+    btnStopTunnel.addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/admin/tunnel/stop", { method: "POST" });
+        const d = await res.json();
+        applyTunnelUi(d);
+      } catch (_e) {}
+    });
+  }
+  if (btnCopyTunnel) {
+    btnCopyTunnel.addEventListener("click", async () => {
+      if (!activeTunnelUrl) return;
+      try {
+        await navigator.clipboard.writeText(activeTunnelUrl);
+        if (tunnelStatusEl) tunnelStatusEl.textContent = `Copied ${activeTunnelUrl} to clipboard.`;
+      } catch (_e) {
+        if (tunnelStatusEl) tunnelStatusEl.textContent = `HTTPS Tunnel URL: ${activeTunnelUrl}`;
+      }
+    });
+  }
+  if (btnTestTunnel) {
+    btnTestTunnel.addEventListener("click", async () => {
+      if (tunnelStatusEl) tunnelStatusEl.textContent = "Testing telemetry receiver & public tunnel…";
+      try {
+        const res = await fetch("/api/admin/tunnel/test", { method: "POST" });
+        const d = await res.json();
+        if (tunnelStatusEl) {
+          tunnelStatusEl.textContent = `${d.detail || "Receiver check complete."} (Remote installs tracked: ${d.remote_clients_count ?? 0})`;
+        }
+      } catch (_e) {
+        if (tunnelStatusEl) tunnelStatusEl.textContent = "Receiver health check failed.";
+      }
+    });
+  }
+
   // ── Global Cmd+K / Ctrl+K Shortcut to Toggle Copilot ──
   document.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {

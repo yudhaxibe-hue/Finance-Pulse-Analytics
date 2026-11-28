@@ -28,7 +28,16 @@
         <h2>Remote app installs &amp; sync receiver</h2>
         <p>Privacy-safe device &amp; account registry (tracks installs, signups, and logins across Android, Windows, and macOS—zero private transaction rows are collected).</p>
       </div>
-      <span class="badge accent">{{ receiver_url }}</span>
+      <div class="header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        {% if tunnel and tunnel.active and tunnel.public_url %}
+          <span class="badge accent" title="Public HTTPS tunnel forwarding to {{ receiver_url }}">Tunnel Live: {{ tunnel.public_url }}</span>
+        {% elif tunnel and tunnel.configured_sync_url %}
+          <span class="badge accent">Public Sync: {{ tunnel.configured_sync_url }}</span>
+        {% else %}
+          <span class="badge accent">{{ receiver_url }}</span>
+        {% endif %}
+        <a class="button secondary" href="{{ url_for('admin_settings') }}#tunnelPanel">Tunnel settings</a>
+      </div>
     </div>
     {% if remote_clients %}
       <div class="tablewrap">

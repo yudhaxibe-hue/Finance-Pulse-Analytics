@@ -192,6 +192,8 @@ def get_sync_config() -> dict[str, Any]:
     effective_url = override_url or env_url or manifest_url
     outbox = _read_json_file(_sync_outbox_path(), [])
     queue_count = len(outbox) if isinstance(outbox, list) else 0
+    tel_outbox = _read_json_file(_telemetry_outbox_path(), [])
+    telemetry_queue_count = len(tel_outbox) if isinstance(tel_outbox, list) else 0
     with _STATE_LOCK:
         last_at = _SYNC_RUNTIME["last_sync_at"]
         last_ok = _SYNC_RUNTIME["last_sync_ok"]
@@ -203,6 +205,7 @@ def get_sync_config() -> dict[str, Any]:
         "effective_url": effective_url,
         "mode": "Manual override" if override_url else ("Environment config" if env_url else ("Automatic manifest" if manifest_url else "Offline local")),
         "queue_count": queue_count,
+        "telemetry_queue_count": telemetry_queue_count,
         "last_sync_at": last_at,
         "last_sync_ok": last_ok,
         "last_sync_error": last_err,
@@ -1047,3 +1050,168 @@ def flush_sync_outbox(server_port: Optional[int] = None) -> dict[str, Any]:
             _SYNC_RUNTIME["last_sync_ok"] = bool(any_ok and not last_err)
             _SYNC_RUNTIME["last_sync_error"] = last_err
     return get_sync_config()
+
+
+# ---------------------------------------------------------------------------
+# Admin Over-the-Air HTTPS Tunnel Receiver Manager (Cloudflare / Tailscale)
+# ---------------------------------------------------------------------------
+
+_TUNNEL_LOCK = threading.Lock()
+_TUNNEL_STATE: dict[str, Any] = {
+    "proc": None,
+    "public_url": "",
+    "error": "",
+    "started_at": "",
+    "port": 5055,
+    "provider": "cloudflared",
+}
+_TUNNEL_ATEXIT_REGISTERED = False
+
+
+def _find_tunnel_binary(name: str) -> str:
+    found = shutil.which(name)
+    if found:
+        return found
+    for candidate in (f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}"):
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return ""
+
+
+def _extract_tunnel_url(line: str) -> str:
+    match = re.search(r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com\b", line or "")
+    return match.group(0) if match else ""
+
+
+def get_admin_tunnel_status(port: int = 5055) -> dict[str, Any]:
+    """Return status of the local Admin receiver and any active over-the-air HTTPS tunnel."""
+    cf_bin = _find_tunnel_binary("cloudflared")
+    ts_bin = _find_tunnel_binary("tailscale")
+    with _TUNNEL_LOCK:
+        proc = _TUNNEL_STATE.get("proc")
+        running = proc is not None and proc.poll() is None
+        if proc is not None and not running:
+            _TUNNEL_STATE["proc"] = None
+            _TUNNEL_STATE["public_url"] = ""
+        public_url = str(_TUNNEL_STATE.get("public_url") or "") if running else ""
+        err = str(_TUNNEL_STATE.get("error") or "")
+        started_at = str(_TUNNEL_STATE.get("started_at") or "") if running else ""
+        pid = proc.pid if running else None
+    configured_sync_url = normalize_http_url(os.environ.get("FINANCE_PULSE_SYNC_URL") or config.DEFAULT_SYNC_URL) or ""
+    return {
+        "local_port": int(port or 5055),
+        "receiver_url": f"http://127.0.0.1:{int(port or 5055)}",
+        "cloudflared_installed": bool(cf_bin),
+        "cloudflared_path": cf_bin,
+        "tailscale_installed": bool(ts_bin),
+        "tailscale_path": ts_bin,
+        "active": running,
+        "pid": pid,
+        "public_url": public_url,
+        "started_at": started_at,
+        "error": err,
+        "configured_sync_url": configured_sync_url,
+    }
+
+
+def stop_admin_tunnel() -> dict[str, Any]:
+    """Stop any managed Cloudflare Quick Tunnel child process cleanly."""
+    with _TUNNEL_LOCK:
+        proc = _TUNNEL_STATE.get("proc")
+        port = int(_TUNNEL_STATE.get("port") or 5055)
+        _TUNNEL_STATE["proc"] = None
+        _TUNNEL_STATE["public_url"] = ""
+        _TUNNEL_STATE["error"] = ""
+        _TUNNEL_STATE["started_at"] = ""
+    if proc is not None and proc.poll() is None:
+        try:
+            proc.terminate()
+            proc.wait(timeout=4)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    return get_admin_tunnel_status(port)
+
+
+def start_admin_quick_tunnel(port: int = 5055, wait_seconds: float = 10.0) -> dict[str, Any]:
+    """Start a Cloudflare Quick Tunnel exposing the local Admin receiver over HTTPS."""
+    global _TUNNEL_ATEXIT_REGISTERED
+    import atexit
+    import time
+
+    target_port = int(port or 5055)
+    current = get_admin_tunnel_status(target_port)
+    if current["active"] and current["public_url"]:
+        return current
+    if current["active"]:
+        stop_admin_tunnel()
+
+    cf_bin = current["cloudflared_path"]
+    if not cf_bin:
+        with _TUNNEL_LOCK:
+            _TUNNEL_STATE["error"] = "cloudflared is not installed on this machine (install via `brew install cloudflared`)."
+        return get_admin_tunnel_status(target_port)
+
+    if not _TUNNEL_ATEXIT_REGISTERED:
+        atexit.register(stop_admin_tunnel)
+        _TUNNEL_ATEXIT_REGISTERED = True
+
+    cmd = [cf_bin, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{target_port}"]
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+    except Exception as exc:
+        with _TUNNEL_LOCK:
+            _TUNNEL_STATE["error"] = f"Failed to launch cloudflared: {exc}"
+        return get_admin_tunnel_status(target_port)
+
+    with _TUNNEL_LOCK:
+        _TUNNEL_STATE["proc"] = proc
+        _TUNNEL_STATE["public_url"] = ""
+        _TUNNEL_STATE["error"] = ""
+        _TUNNEL_STATE["started_at"] = datetime.utcnow().isoformat() + "Z"
+        _TUNNEL_STATE["port"] = target_port
+
+    def _reader():
+        recent_lines: list[str] = []
+        stream = proc.stdout
+        if not stream:
+            return
+        try:
+            for raw_line in iter(stream.readline, ""):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                recent_lines = (recent_lines + [line])[-15:]
+                url = _extract_tunnel_url(line)
+                if url:
+                    with _TUNNEL_LOCK:
+                        if _TUNNEL_STATE.get("proc") is proc:
+                            _TUNNEL_STATE["public_url"] = url
+                            _TUNNEL_STATE["error"] = ""
+        except Exception:
+            pass
+        finally:
+            rc = proc.poll()
+            if rc not in (None, 0):
+                with _TUNNEL_LOCK:
+                    if _TUNNEL_STATE.get("proc") is proc and not _TUNNEL_STATE.get("public_url"):
+                        tail = recent_lines[-1] if recent_lines else f"exit code {rc}"
+                        _TUNNEL_STATE["error"] = f"Tunnel stopped unexpectedly ({tail})"
+
+    threading.Thread(target=_reader, name="FinancePulse-TunnelReader", daemon=True).start()
+
+    deadline = time.monotonic() + max(1.0, wait_seconds)
+    while time.monotonic() < deadline:
+        snap = get_admin_tunnel_status(target_port)
+        if snap["public_url"] or not snap["active"]:
+            return snap
+        time.sleep(0.25)
+    return get_admin_tunnel_status(target_port)

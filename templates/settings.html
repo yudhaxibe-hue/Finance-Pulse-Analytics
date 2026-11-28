@@ -41,6 +41,40 @@
 
     <hr>
 
+    {% if portal == 'admin' %}
+      <div id="tunnelPanel" class="panel-head" style="margin-bottom: 10px;">
+        <div>
+          <h2>Over-the-Air HTTPS Tunnel &amp; Telemetry Receiver</h2>
+          <p>Expose your local Admin receiver cleanly over HTTPS so Android (4G/5G) and Windows installs can send privacy-safe install &amp; account pings whenever this Mac app is open.</p>
+        </div>
+        <div class="header-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="button" id="btnStartAdminTunnel" {% if not tunnel or not tunnel.cloudflared_installed %}disabled{% endif %}>Start Quick HTTPS Tunnel</button>
+          <button type="button" class="button secondary" id="btnStopAdminTunnel" {% if not tunnel or not tunnel.active %}hidden{% endif %}>Stop Tunnel</button>
+          <button type="button" class="button secondary" id="btnCopyAdminTunnelUrl" {% if not tunnel or not (tunnel.public_url or tunnel.configured_sync_url) %}hidden{% endif %}>Copy HTTPS URL</button>
+          <button type="button" class="button secondary" id="btnTestAdminTunnel">Test Receiver</button>
+        </div>
+      </div>
+      <p class="panel-copy" id="adminTunnelStatusText">
+        {% if tunnel and tunnel.active and tunnel.public_url %}
+          Quick HTTPS Tunnel Active: <code>{{ tunnel.public_url }}</code> → <code>{{ tunnel.receiver_url }}</code> (PID {{ tunnel.pid }})
+        {% elif tunnel and tunnel.configured_sync_url %}
+          Configured GitHub Sync URL: <code>{{ tunnel.configured_sync_url }}</code> · Local receiver: <code>{{ tunnel.receiver_url }}</code>
+        {% else %}
+          Local receiver ready on <code>{{ tunnel.receiver_url if tunnel else 'http://127.0.0.1:5055' }}</code> ·
+          {% if tunnel and tunnel.cloudflared_installed %}
+            <code>cloudflared</code> detected — click <strong>Start Quick HTTPS Tunnel</strong> for instant 4G/5G testing.
+          {% else %}
+            Install <code>cloudflared</code> (<code>brew install cloudflared</code>) or Tailscale Funnel for 4G/5G HTTPS access.
+          {% endif %}
+        {% endif %}
+      </p>
+      <p class="muted" style="font-size:12px;margin-top:4px;">
+        For a permanent URL across restarts, run a named Cloudflare Tunnel or <code>tailscale funnel 5055</code> forwarding to <code>http://127.0.0.1:5055</code> and set <code>FINANCE_PULSE_SYNC_URL</code> in GitHub repository variables.
+      </p>
+
+      <hr>
+    {% endif %}
+
     <div class="panel-head" style="margin-bottom: 10px;">
       <div>
         <h2>Software updates</h2>

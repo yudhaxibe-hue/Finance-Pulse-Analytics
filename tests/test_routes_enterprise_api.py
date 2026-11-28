@@ -561,3 +561,42 @@ class TestCopilotEndpointsPowerBiApiAndAdminBackups:
         ausers = admin.get("/admin/users")
         assert ausers.status_code == 200
         assert b"rishith@example.com" in ausers.data
+
+    def test_admin_tunnel_controls_and_access_guard(self, isolated_env):
+        import updater
+
+        sample_log = "2026-11-28T05:00:00Z INF |  https://finance-pulse-demo.trycloudflare.com  |"
+        assert updater._extract_tunnel_url(sample_log) == "https://finance-pulse-demo.trycloudflare.com"
+        assert updater._extract_tunnel_url("plain log without tunnel") == ""
+
+        import app
+
+        user_client = _register_user(app.app.test_client(), email="normal_tunnel_test@example.com")
+        udash = user_client.get("/user/dashboard")
+        assert udash.status_code == 200
+        assert b"Over-the-Air HTTPS Tunnel" not in udash.data
+
+        # Unauthenticated/regular user cannot access admin tunnel endpoints
+        for method, path in [
+            ("GET", "/api/admin/tunnel/status"),
+            ("POST", "/api/admin/tunnel/start"),
+            ("POST", "/api/admin/tunnel/stop"),
+            ("POST", "/api/admin/tunnel/test"),
+        ]:
+            resp = user_client.open(path, method=method)
+            assert resp.status_code in (302, 403)
+
+        admin = _make_admin_client()
+        asettings = admin.get("/admin/settings")
+        assert asettings.status_code == 200
+        assert b"Over-the-Air HTTPS Tunnel" in asettings.data
+
+        tstat = admin.get("/api/admin/tunnel/status")
+        assert tstat.status_code == 200
+        tdata = tstat.get_json()
+        assert tdata["ok"] is True and tdata["receiver_url"] == "http://127.0.0.1:5055"
+
+        ttest = admin.post("/api/admin/tunnel/test")
+        assert ttest.status_code == 200
+        test_data = ttest.get_json()
+        assert test_data["ok"] is True and test_data["local_receiver_ready"] is True

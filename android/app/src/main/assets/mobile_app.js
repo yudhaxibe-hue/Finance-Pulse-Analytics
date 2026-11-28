@@ -12,7 +12,7 @@
   const STORAGE_INSTALL_ID = "fp_install_id_v1";
   const STORAGE_TELEMETRY_OUTBOX = "fp_telemetry_outbox_v1";
   const STORAGE_INSTALL_SENT = "fp_install_sent_v1";
-  const MOBILE_APP_VERSION = "1.3.8";
+  const MOBILE_APP_VERSION = "1.4.0";
   const DEFAULT_CFG = { currency: "INR", marginThreshold: 15, anomalyIqr: 1.5 };
 
   let state = {
@@ -2737,7 +2737,7 @@
         window.AndroidBridge.checkForUpdates();
       } else {
         setTimeout(() => {
-          if (box) box.textContent = "Version 1.3.8 · Direct update check runs inside the installed Android APK.";
+          if (box) box.textContent = "Version 1.4.0 · Direct update check runs inside the installed Android APK.";
         }, 120);
       }
     });
@@ -2795,8 +2795,10 @@
       }
       document.getElementById("opSyncUrlInput").value = url;
       statusBox.textContent = "Testing connection to " + url + "…";
+      await flushTelemetryOutbox();
       const health = await callCentralApi("GET", "/health");
       if (health.ok && health.data && health.data.status === "ok") {
+        await flushTelemetryOutbox();
         await flushSyncOutbox();
         renderOperatorSyncStatus();
         if (state.user && !getSyncToken(state.user.email)) {
@@ -2817,6 +2819,7 @@
       }
       document.getElementById("opSyncUrlInput").value = "";
       renderOperatorSyncStatus();
+      flushTelemetryOutbox();
       flushSyncOutbox();
     });
     document.getElementById("btnOpOpenFullView").addEventListener("click", () => {
