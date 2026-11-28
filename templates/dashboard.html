@@ -68,6 +68,11 @@
             </span>
           {% endif %}
           <span class="muted num txn-count-pill" id="dashTxnCount">{{ metrics.transactions }} transaction{{ '' if metrics.transactions == 1 else 's' }}</span>
+          {% if has_data %}
+            <form method="post" action="{{ url_for('user_data_clear') }}" style="display:inline;" onsubmit="return confirm('Clear all workspace transactions and switch to a clean audit?');">
+              <button type="submit" class="button quiet" style="padding:4px 10px;font-size:12px;min-height:28px;" title="Clear current audit so you can import a new file cleanly">Clear audit</button>
+            </form>
+          {% endif %}
         </div>
       </div>
 

@@ -93,6 +93,33 @@
       </article>
     </section>
 
+    {% if existing_count and existing_count > 0 %}
+      <section class="panel" style="margin-top:16px;">
+        <div class="panel-head">
+          <div>
+            <h2>Import conflict &amp; workspace handling</h2>
+            {% if existing_persona and new_persona and existing_persona.mode != new_persona.mode %}
+              <p style="color:var(--accent, #0066CC);font-weight:600;">
+                Audit type change detected: Existing workspace is {{ existing_persona.type_label }} ({{ existing_count }} rows), whereas this file is {{ new_persona.type_label }}. Replace existing data to keep Auto mode accurate.
+              </p>
+            {% else %}
+              <p>Your workspace currently has {{ existing_count }} rows. Choose whether this file replaces them or appends to them.</p>
+            {% endif %}
+          </div>
+        </div>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;padding:4px 0 6px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+            <input type="radio" name="import_mode" value="replace" {{ 'checked' if selected_import_mode == 'replace' or (existing_persona and new_persona and existing_persona.mode != new_persona.mode) }}>
+            <span>Replace existing audit (clear old {{ existing_count }} rows &amp; auto-detect fresh mode)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="import_mode" value="append" {{ '' if selected_import_mode == 'replace' or (existing_persona and new_persona and existing_persona.mode != new_persona.mode) else 'checked' }}>
+            <span>Append to existing workspace</span>
+          </label>
+        </div>
+      </section>
+    {% endif %}
+
     <div class="header-actions" style="margin-top:16px;">
       <input type="hidden" name="confirm" value="1">
       <button class="pill">Confirm and import</button>

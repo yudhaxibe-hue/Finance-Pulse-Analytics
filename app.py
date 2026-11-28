@@ -865,10 +865,59 @@ def user_optimization():
     )
 
 
+def _clear_workspace_records(ws_id: int) -> int:
+    conn = connect()
+    row = conn.execute("SELECT COUNT(*) FROM financial_transactions WHERE workspace_id=?", (ws_id,)).fetchone()
+    deleted = int(row[0]) if row else 0
+    conn.execute("DELETE FROM financial_transactions WHERE workspace_id=?", (ws_id,))
+    conn.execute("DELETE FROM imports WHERE workspace_id=?", (ws_id,))
+    conn.commit()
+    conn.close()
+    session.pop("staged_import", None)
+    session.pop("receipt_preview", None)
+    session["audit_mode_override"] = "auto"
+    return deleted
+
+
+@app.route("/user/data/clear", methods=["POST"])
+@login_required
+def user_data_clear():
+    ws_id = workspace_id()
+    deleted = _clear_workspace_records(ws_id)
+    audit("workspace_cleared", f"{deleted} rows removed")
+    if request.is_json or "application/json" in (request.headers.get("Accept") or ""):
+        return jsonify({"ok": True, "deleted": deleted, "message": "Workspace cleared."})
+    flash(f"Cleared {deleted:,} existing records. Your workspace is ready for a fresh Personal or Enterprise audit.", "success")
+    return redirect(url_for("user_data"))
+
+
+@app.route("/user/data/import/<int:import_id>/delete", methods=["POST"])
+@login_required
+def user_delete_import(import_id: int):
+    ws_id = workspace_id()
+    conn = connect()
+    imp = conn.execute("SELECT filename, row_count FROM imports WHERE id=? AND workspace_id=?", (import_id, ws_id)).fetchone()
+    if imp:
+        conn.execute("DELETE FROM financial_transactions WHERE import_id=? AND workspace_id=?", (import_id, ws_id))
+        conn.execute("DELETE FROM imports WHERE id=? AND workspace_id=?", (import_id, ws_id))
+        conn.commit()
+        session["audit_mode_override"] = "auto"
+        audit("import_deleted", f"{imp['filename']} ({imp['row_count']} rows)")
+        flash(f"Removed '{imp['filename']}' ({imp['row_count']} rows) and refreshed audit mode.", "success")
+    else:
+        flash("Import record not found in your workspace.", "error")
+    conn.close()
+    return redirect(url_for("user_data"))
+
+
 @app.route("/user/data", methods=["GET", "POST"])
 @login_required
 def user_data():
     ws_id = workspace_id()
+    existing_df = raw_data_frame(ws_id)
+    existing_count = int(len(existing_df)) if existing_df is not None else 0
+    existing_persona = detect_audit_persona(existing_df) if existing_count > 0 else None
+
     if request.method == "POST":
         if request.form.get("confirm") == "1":
             staged = session.get("staged_import")
@@ -876,6 +925,7 @@ def user_data():
                 flash("Your import preview expired. Upload the file again.", "error")
             else:
                 try:
+                    import_mode = str(request.form.get("import_mode") or staged.get("import_mode") or "append").strip().lower()
                     frame = read_file(Path(staged["path"]))
                     custom_mapping = dict(staged["mapping"])
                     for field in (
@@ -902,9 +952,17 @@ def user_data():
                             report=report,
                             preview=frame.head(8).fillna("").to_dict("records"),
                             columns=list(frame.columns),
+                            existing_count=existing_count,
+                            existing_persona=existing_persona,
+                            new_persona=staged.get("new_persona"),
+                            selected_import_mode=import_mode,
                             portal="user",
                         )
                     cleaned, excluded = normalize(frame, custom_mapping)
+                    if import_mode == "replace":
+                        _clear_workspace_records(ws_id)
+                    else:
+                        session["audit_mode_override"] = "auto"
                     persist(cleaned, staged["filename"], report, excluded, ws_id)
                     try:
                         fp = column_fingerprint(frame.columns)
@@ -985,11 +1043,23 @@ def user_data():
             if not mapping:
                 mapping = detect(frame.columns, frame=frame)
             report = quality_report(frame, mapping)
+            selected_import_mode = str(request.form.get("import_mode") or "").strip().lower()
+            if selected_import_mode not in ("replace", "append"):
+                selected_import_mode = "append"
+            new_persona = None
+            try:
+                sample_clean, _ = normalize(frame.head(150), mapping)
+                if not sample_clean.empty:
+                    new_persona = detect_audit_persona(sample_clean)
+            except Exception:
+                new_persona = None
             session["staged_import"] = {
                 "path": str(path),
                 "filename": file.filename,
                 "mapping": mapping,
                 "report": report,
+                "import_mode": selected_import_mode,
+                "new_persona": new_persona,
             }
             if report["missing_required"]:
                 flash("Some required fields couldn't be auto-detected (" + ", ".join(report["missing_required"]) + "). Select the matching columns below.", "error")
@@ -999,6 +1069,10 @@ def user_data():
                 report=report,
                 preview=frame.head(8).fillna("").to_dict("records"),
                 columns=list(frame.columns),
+                existing_count=existing_count,
+                existing_persona=existing_persona,
+                new_persona=new_persona,
+                selected_import_mode=selected_import_mode,
                 portal="user",
             )
         except Exception:
@@ -1020,6 +1094,8 @@ def user_data():
         "data.html",
         imports=imports,
         receipt_preview=receipt_preview,
+        existing_count=existing_count,
+        existing_persona=existing_persona,
         today=datetime.utcnow().strftime("%Y-%m-%d"),
         portal="user",
     )
@@ -1247,6 +1323,7 @@ def user_receipt_discard():
 @login_required
 def user_load_enterprise_sample():
     ws_id = workspace_id()
+    session["audit_mode_override"] = "auto"
     frame = build_enterprise_10k_dataframe(n_rows=10000, seed=2026)
     mapping = detect(frame.columns)
     report = quality_report(frame, mapping)

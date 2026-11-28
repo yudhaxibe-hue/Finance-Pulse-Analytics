@@ -1,3 +1,4 @@
+import re
 import numpy as np
 import pandas as pd
 from .financial_metrics import metrics, period_growth
@@ -115,33 +116,51 @@ def detect_audit_persona(df) -> dict:
         e_score += 8
 
     # 2. Semantic Vocabulary & Payee Clustering + Term Density (Weight: 45%)
-    personal_keywords = {
-        "salary", "stipend", "mess", "tiffin", "rent", "pg", "groceries", "fruits",
-        "vegetables", "milk", "tea", "coffee", "snacks", "outing", "outings", "restaurant",
-        "restaurants", "dining", "cinema", "movie", "pvr", "bus", "mtc", "metro", "auto",
-        "recharge", "airtel", "jio", "laundry", "toiletries", "tuition", "college", "fees",
-        "pharmacy", "medical", "doctor", "ott", "netflix", "hotstar", "swiggy", "zomato",
-        "sent home", "family support", "recurring deposit", "rd", "sip", "pocket money",
-        "saravana bhavan", "tea kadai", "amma mess", "local market", "apollo pharmacy", "pvr cinemas",
-    }
-    enterprise_keywords = {
+    personal_keywords = (
+        "salary", "stipend", "tiffin", "mess / tiffin", "pg rent", "pg electricity", "pg wi-fi", "pg owner", "groceries", "fruits",
+        "vegetables", "milk", "tea kadai", "tea & snacks", "coffee", "snacks", "weekend outing", "outing", "outings",
+        "restaurants", "dining", "cinema", "movie", "pvr", "bus pass", "mtc", "metro",
+        "mobile recharge", "recharge", "airtel", "jio", "laundry", "toiletries", "evening/second college",
+        "ott", "netflix", "hotstar", "swiggy", "zomato", "sent home", "support to family",
+        "family support", "recurring deposit", "pocket money", "saravana bhavan", "amma mess",
+        "local vegetable market", "local market", "apollo pharmacy", "pvr cinemas", "buhari", "anjappar",
+    )
+    enterprise_keywords = (
         "payroll", "accounts payable", "accounts receivable", "aws", "azure", "gcp", "cloud",
         "saas", "software licenses", "office lease", "logistics", "freight", "b2b",
         "vendor contract", "depreciation", "audit fees", "procurement", "consulting fees",
         "legal compliance", "marketing ad spend", "inventory", "purchase order", "po number",
         "cogs", "client retainer", "sales pipeline", "vendor retainer",
-    }
+        "hospital", "medical college", "mbbs", "diagnostic", "radiology", "pathology",
+        "cardiology", "cath lab", "surgical", "ventilator", "icu", "biomedical", "reagents",
+        "pharmaceutical", "insurance claim", "govt health scheme", "corporate credit",
+        "research grant", "tuition & academic", "semester fee", "equipment maintenance",
+        "preventive maintenance", "monthly contract", "dispensary", "inpatient", "opd",
+    )
 
-    text_cols = [col_map[k] for k in ("category", "subcategory", "vendor_name", "payee", "notes", "description") if k in col_map]
+    personal_re = re.compile(
+        r"\b(?:" + "|".join(re.escape(k) for k in personal_keywords) + r"|" + r"rd|sip" + r")\b",
+        re.IGNORECASE,
+    )
+    enterprise_re = re.compile(
+        r"\b(?:" + "|".join(re.escape(k) for k in enterprise_keywords) + r")\b",
+        re.IGNORECASE,
+    )
+
+    text_cols = [
+        col_map[k]
+        for k in ("category", "subcategory", "product", "department", "vendor_name", "payee", "notes", "description")
+        if k in col_map
+    ]
     total_rows = max(1, len(df))
     p_row_matches = 0
     e_row_matches = 0
     if text_cols:
-        row_texts = df[text_cols].fillna("").astype(str).agg(" ".join, axis=1).str.lower()
+        row_texts = df[text_cols].fillna("").astype(str).agg(" ".join, axis=1)
         for txt in row_texts.tolist():
-            if any(kw in txt for kw in personal_keywords):
+            if personal_re.search(txt):
                 p_row_matches += 1
-            if any(kw in txt for kw in enterprise_keywords):
+            if enterprise_re.search(txt):
                 e_row_matches += 1
 
     p_density = p_row_matches / total_rows
@@ -151,8 +170,8 @@ def detect_audit_persona(df) -> dict:
         p_score += round(min(45.0, p_density * 65.0), 1)
         reasons.append(f"Semantic density: {p_density * 100:.0f}% of transactions match personal lifestyle/payee terms")
     if e_density > 0:
-        e_score += round(min(45.0, e_density * 65.0), 1)
-        reasons.append(f"Semantic density: {e_density * 100:.0f}% of transactions match B2B enterprise terms")
+        e_score += round(min(55.0, e_density * 75.0), 1)
+        reasons.append(f"Semantic density: {e_density * 100:.0f}% of transactions match corporate/institutional terms")
 
     # 3. Cashflow Topology & Micro-Transaction Cadence (Weight: 20%)
     rev_col = col_map.get("revenue") or col_map.get("revenue_inr") or col_map.get("credit")
@@ -185,7 +204,7 @@ def detect_audit_persona(df) -> dict:
         except Exception:
             pass
 
-    is_personal = (p_score > e_score) or (has_need_want and p_score >= 30)
+    is_personal = p_score > e_score
     confidence = min(0.99, max(0.60, round((p_score / (p_score + e_score + 1e-6)) if is_personal else (e_score / (p_score + e_score + 1e-6)), 2)))
 
     if is_personal:

@@ -23,6 +23,21 @@
             <span data-file-name></span>
           </span>
         </label>
+        {% if existing_count and existing_count > 0 %}
+          <div class="import-mode-box" style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-subtle, #f8f9fa);display:grid;gap:6px;">
+            <span style="font-size:12px;font-weight:600;color:var(--text);">Workspace already holds {{ existing_count }} {{ 'Personal' if existing_persona and existing_persona.mode == 'personal' else 'Enterprise' }} rows:</span>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px;">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:500;">
+                <input type="radio" name="import_mode" value="replace" checked>
+                <span>Replace existing audit (recommended when switching Personal &harr; Company)</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="radio" name="import_mode" value="append">
+                <span>Append to existing ledger</span>
+              </label>
+            </div>
+          </div>
+        {% endif %}
         <button>Validate and import</button>
       </form>
       <p class="chart-note">All imported records are stored locally in SQLite WAL and automatically risk-scored offline by Random Forest + Isolation Forest.</p>
@@ -174,6 +189,11 @@
         <h2>Dataset history</h2>
         <p>Audit log of files, receipts, and manual entries committed to your private workspace.</p>
       </div>
+      {% if existing_count and existing_count > 0 %}
+        <form method="post" action="{{ url_for('user_data_clear') }}" onsubmit="return confirm('Clear all {{ existing_count }} records and previous audits from your workspace? This cannot be undone.');">
+          <button type="submit" class="button secondary pill" id="btnClearWorkspace">Clear all audits ({{ existing_count }})</button>
+        </form>
+      {% endif %}
     </div>
     {% if imports %}
       <div class="tablewrap">
@@ -185,6 +205,7 @@
               <th class="num">Rows</th>
               <th class="num">Excluded</th>
               <th>Data quality</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -202,6 +223,11 @@
                       <span class="badge {{ 'warning' if item.quality.get('duplicate_ids', 0) > 0 else '' }} num">{{ item.quality.get('duplicate_ids', 0) }} duplicate IDs</span>
                     </div>
                   {% else %}—{% endif %}
+                </td>
+                <td>
+                  <form method="post" action="{{ url_for('user_delete_import', import_id=item.id) }}" onsubmit="return confirm('Remove {{ item.filename }} ({{ item.row_count }} rows) from workspace?');">
+                    <button type="submit" class="button quiet" style="padding:4px 10px;font-size:12px;">Delete</button>
+                  </form>
                 </td>
               </tr>
             {% endfor %}

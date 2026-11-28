@@ -487,3 +487,36 @@ class TestCopilotEndpointsPowerBiApiAndAdminBackups:
         # Verify session receipt_preview was cleared
         with c.session_transaction() as sess:
             assert "receipt_preview" not in sess
+
+    def test_clear_workspace_and_replace_audit_switch_personal_to_hospital(self, isolated_env):
+        c = _register_user(app.app.test_client())
+        personal_csv = (
+            b"Txn_ID,Date,Type,Category,Sub_Category,Description,Payee,Payment_Mode,Need_or_Want,Revenue_INR,Expenses_INR,Savings_INR\n"
+            b"T1,2026-08-01,Income,Salary,Monthly Salary,Salary,Employer,Bank Transfer,Income,38000,0,0\n"
+            b"T2,2026-08-02,Expense,Housing,PG Rent,PG rent,PG Owner,UPI,Need,0,7500,0\n"
+            b"T3,2026-08-03,Expense,Food,Tea & Snacks,Tea + snacks,Tea Kadai,Cash,Want,0,60,0\n"
+        )
+        c.post("/user/data", data={"file": (io.BytesIO(personal_csv), "personal.csv"), "import_mode": "replace"}, content_type="multipart/form-data")
+        c.post("/user/data", data={"confirm": "1", "import_mode": "replace"})
+        d1 = c.get("/user/dashboard").data.decode("utf-8")
+        assert "Audit Mode: Personal &amp; Household Ledger" in d1
+
+        hospital_csv = (
+            b"Date,Transaction_ID,Transaction_Type,Department,Product,Category,Region,Revenue,Expense,Cost,Payment_Method,Vendor_Name,Customer_Segment\n"
+            b"2023-01-05,AIMS-0001,Revenue,Radiology & Imaging,MRI 3T Brain Scans,Diagnostic Services,Block A,779000,0,358340,Insurance Claim,N/A,Insurance Patients\n"
+            b"2023-01-09,AIMS-0002,Revenue,MBBS & PG Medical College,MBBS Semester Fee,Tuition & Academic Fees,Campus,8550000,0,5985000,Bank Transfer,N/A,Medical Students\n"
+            b"2023-01-27,AIMS-0004,Expense,Hospital Administration,Biomedical Waste Contract,Biomedical Waste Management,Wing B,0,62000,0,Bank Transfer,GreenLeaf,Internal Operations\n"
+            b"2023-02-08,AIMS-0006,Revenue,MBBS & PG Medical College,PG Clinical Training Fee,Tuition & Academic Fees,Campus,6650000,0,4522000,Bank Transfer,N/A,PG Residents\n"
+        )
+        prev = c.post("/user/data", data={"file": (io.BytesIO(hospital_csv), "hospital.csv"), "import_mode": "replace"}, content_type="multipart/form-data", follow_redirects=True)
+        prev_html = prev.data.decode("utf-8")
+        assert "Audit type change detected" in prev_html
+        c.post("/user/data", data={"confirm": "1", "import_mode": "replace"}, follow_redirects=True)
+        d2 = c.get("/user/dashboard").data.decode("utf-8")
+        assert "Audit Mode: Corporate P&amp;L" in d2
+        assert "4 transactions" in d2
+
+        clr = c.post("/user/data/clear", follow_redirects=True)
+        assert clr.status_code == 200
+        d3 = c.get("/user/dashboard").data.decode("utf-8")
+        assert "No financial data has been imported yet" in d3
