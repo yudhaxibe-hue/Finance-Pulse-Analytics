@@ -1340,94 +1340,25 @@ def user_powerbi_kit():
 @app.route("/user/report.pdf")
 @login_required
 def user_report():
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.utils import ImageReader, simpleSplit
-    from reportlab.pdfgen import canvas
+    from analytics.report_generator import build_executive_pdf
 
-    curr = settings().get("currency", "INR")
+    cfg = settings()
+    curr = cfg.get("currency", "INR")
+    margin_threshold = _setting_float(cfg, "margin_threshold", 15.0, min_val=0.0, max_val=100.0)
     df = data_frame()
-    m = metrics(df)
-    runway = compute_cashflow_runway(df)
-    ms = ml_summary(df)
-    top_products = by_dimension(df, "product")[:5]
-    stream = io.BytesIO()
-    pdf = canvas.Canvas(stream, pagesize=A4)
-    pdf.setTitle(config.APP_TITLE)
-    pdf.setFont("Helvetica-Bold", 16)
-    pdf.drawString(50, 804, f"{config.APP_NAME} — Financial Summary")
-    pdf.setFont("Helvetica", 9)
-    y = 788
-    for line in simpleSplit(config.APP_SUBTITLE, "Helvetica", 9, 495):
-        pdf.drawString(50, y, line)
-        y -= 13
+    persona = _resolve_active_persona(df)
     workspace_label = g.user["name"] if g.user else "Workspace"
-    pdf.drawString(
-        50,
-        y - 4,
-        f"Workspace: {workspace_label}  |  Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  |  Currency: {curr}",
+
+    pdf_bytes = build_executive_pdf(
+        df=df,
+        currency=curr,
+        user_name=workspace_label,
+        persona=persona,
+        margin_threshold=margin_threshold,
     )
-    pdf.setFont("Helvetica", 11)
-    y -= 34
-
-    def _fmt(key, kind="money"):
-        val = m.get(key)
-        if val is None:
-            return "N/A"
-        if kind == "pct":
-            return f"{val:.2f}%"
-        if kind == "int":
-            return f"{int(val):,}"
-        return f"{curr} {val:,.2f}"
-
-    summary_rows = [
-        ("Total Revenue", _fmt("revenue")),
-        ("Total Expenses", _fmt("expenses")),
-        ("Total Cost (COGS)", _fmt("cost")),
-        ("Gross Profit", _fmt("gross_profit")),
-        ("Net Profit", _fmt("profit")),
-        ("Profit Margin", _fmt("margin", "pct")),
-        ("Expense Ratio", _fmt("expense_ratio", "pct")),
-        ("ROI", _fmt("roi", "pct")),
-        ("Transactions", _fmt("transactions", "int")),
-        ("Cashflow Posture", runway.get("status", "N/A")),
-        ("Random Forest Risk Split", f"{ms['low_risk']} Low / {ms['moderate_risk']} Moderate / {ms['high_risk']} High"),
-    ]
-    for label, text_val in summary_rows:
-        pdf.drawString(50, y, f"{label}: {text_val}")
-        y -= 20
-
-    if top_products and y > 170:
-        y -= 10
-        pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawString(50, y, "Top Product Profitability")
-        y -= 20
-        pdf.setFont("Helvetica", 10)
-        for row in top_products:
-            margin_txt = f"{row['margin']:.2f}%" if row.get("margin") is not None else "N/A"
-            pdf.drawString(
-                50,
-                y,
-                f"{row['product']}  —  Revenue: {curr} {row['revenue']:,.2f}  |  Profit: {curr} {row['profit']:,.2f}  |  Margin: {margin_txt}",
-            )
-            y -= 18
-
-    if df is not None and len(df) >= 2:
-        cash_png = render_monthly_cashflow_png(df, currency=curr)
-        seg_png = render_segment_profit_png(df, dimension="product", currency=curr)
-        if cash_png or seg_png:
-            pdf.showPage()
-            pdf.setFont("Helvetica-Bold", 14)
-            pdf.drawString(50, 800, f"{config.APP_NAME} — Executive Visual Charts")
-            if cash_png:
-                pdf.drawImage(ImageReader(io.BytesIO(cash_png)), 42, 470, width=510, height=245, preserveAspectRatio=True)
-            if seg_png:
-                pdf.drawImage(ImageReader(io.BytesIO(seg_png)), 42, 185, width=510, height=235, preserveAspectRatio=True)
-
-    pdf.save()
-    stream.seek(0)
-    audit("report_exported", "PDF summary")
+    audit("report_exported", "PDF executive tear-sheet")
     return send_file(
-        stream,
+        io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
         as_attachment=True,
         download_name="finance_pulse_summary.pdf",

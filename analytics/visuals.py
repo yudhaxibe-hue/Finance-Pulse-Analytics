@@ -120,11 +120,12 @@ def render_segment_profit_png(df: pd.DataFrame, dimension: str = "product", curr
     plt, ticker, sns = _chart_libs()
     top = rows[:8]
     seg_df = pd.DataFrame(top)
-    names = [str(r.get(dimension) or "Unassigned")[:28] for r in top]
+    names = [str(r.get(dimension) or "Unassigned")[:40] for r in top]
     profits = [float(r.get("profit") or 0.0) for r in top]
     palette = [_APPLE["emerald"] if p >= 0 else _APPLE["crimson"] for p in profits]
 
-    fig, ax = plt.subplots(figsize=(8.4, 3.8))
+    fig, ax = plt.subplots(figsize=(8.8, 3.8))
+    fig.subplots_adjust(left=0.30, right=0.96, top=0.88, bottom=0.15)
     y_pos = list(range(len(names)))[::-1]
     ax.barh(y_pos, profits, color=palette, height=0.58, alpha=0.9)
     ax.set_yticks(y_pos)
