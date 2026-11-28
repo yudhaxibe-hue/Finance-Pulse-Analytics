@@ -329,6 +329,9 @@ def get_update_status() -> dict[str, Any]:
     snap["platform"] = sys.platform
     snap["can_self_install"] = bool(target.get("can_self_install"))
     snap["install_mode"] = str(target.get("mode") or "")
+    if snap["install_mode"] == "custom_admin_bundle":
+        # Private owner Admin bundle is not distributed via public GitHub User releases.
+        snap["update_available"] = False
     return snap
 
 

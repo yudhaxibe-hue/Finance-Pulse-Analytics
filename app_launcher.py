@@ -412,8 +412,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     target_url = f"http://{probe_host}:{port}{start_path}"
     webview_cache = config.DATA_DIR / ("webview_admin" if args.admin else "webview_user")
+    win_title = f"{config.APP_NAME} Admin" if args.admin else config.APP_NAME
     open_native_or_browser(
-        title=config.APP_NAME,
+        title=win_title,
         target_url=target_url,
         use_browser=args.browser,
         storage_dir=webview_cache,
