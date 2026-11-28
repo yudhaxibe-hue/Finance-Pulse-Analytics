@@ -381,7 +381,7 @@ class TestAdditionalCoverageAndEnterpriseGuards:
         c = app.app.test_client()
         health = c.get("/health").get_json()
         assert health["status"] == "ok"
-        assert health["version"] == config.APP_VERSION == "1.3.8"
+        assert health["version"] == config.APP_VERSION == "1.4.0"
 
         from analytics.report_generator import build_executive_pdf
         import pandas as pd
