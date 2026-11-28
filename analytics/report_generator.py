@@ -18,7 +18,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from .financial_metrics import budget_50_30_20, compute_cashflow_runway, metrics, monthly
-from .intelligence import overview_narrative
+from .intelligence import detect_audit_persona, overview_narrative
 from .ml_engine import ml_summary
 from .profitability import by_dimension
 from .visuals import render_monthly_cashflow_png, render_segment_profit_png
@@ -103,9 +103,10 @@ def build_executive_pdf(
     margin_threshold: float = 15.0,
 ) -> bytes:
     """Builds a 2-page executive financial tear-sheet PDF."""
+    if df is None:
+        df = pd.DataFrame(columns=["txn_date", "revenue", "expense", "cost", "investment"])
     if persona is None:
-        from app import _resolve_active_persona
-        persona = _resolve_active_persona(df)
+        persona = detect_audit_persona(df)
 
     is_pers = (persona.get("mode") == "personal")
     m = metrics(df)

@@ -7,8 +7,8 @@ from pathlib import Path
 APP_NAME = "Finance Pulse Analytics"
 APP_SUBTITLE = "Enterprise Financial Performance Intelligence and Profitability Optimization Analytics Platform"
 APP_TITLE = f"{APP_NAME}: {APP_SUBTITLE}"
-APP_VERSION = "1.3.7"
-APP_BUILD = 28
+APP_VERSION = "1.3.8"
+APP_BUILD = 29
 
 BASE_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(sys._MEIPASS) if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS") else BASE_DIR
@@ -37,7 +37,7 @@ _load_build_info()
 GITHUB_REPO = os.environ.get("FINANCE_PULSE_GITHUB_REPO", "yudhaxibe-hue/Finance-Pulse-Analytics").strip()
 UPDATE_MANIFEST_URL = os.environ.get(
     "FINANCE_PULSE_MANIFEST_URL",
-    f"https://github.com/{GITHUB_REPO}/releases/download/v1.0.0/version.json",
+    f"https://github.com/{GITHUB_REPO}/releases/latest/download/version.json",
 ).strip()
 DEFAULT_SYNC_URL = os.environ.get("FINANCE_PULSE_SYNC_URL", "").strip()
 

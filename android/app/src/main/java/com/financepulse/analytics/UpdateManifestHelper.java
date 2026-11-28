@@ -11,7 +11,7 @@ import java.util.Set;
  */
 public final class UpdateManifestHelper {
     public static final String DEFAULT_MANIFEST_URL =
-            "https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/download/v1.0.0/version.json";
+            "https://github.com/yudhaxibe-hue/Finance-Pulse-Analytics/releases/latest/download/version.json";
     public static final String BUNDLED_VERSION_NAME = "1.2.0";
 
     private static final Set<String> ALLOWED_OTA_ENTRIES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(

@@ -214,7 +214,11 @@ def parse_receipt_text(raw_text: str, filename: str = "") -> Dict[str, Any]:
 
     vendor = "Document Extract"
     for ln in lines[:8]:
-        if len(ln) >= 3 and not re.match(r"^(tax invoice|invoice|receipt|bill of supply|cash memo|retail invoice|welcome to|gstin|cin|pan|bill|date|total|page)\b", ln, re.I):
+        if (
+            len(ln) >= 3
+            and not re.match(r"^(tax invoice|invoice|receipt|bill of supply|cash memo|retail invoice|welcome to|gstin|cin|pan|bill|date|total|page|completed|pay again|\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d+%)\b", ln, re.I)
+            and not re.fullmatch(r"[\d\s:/.\-+%₹$]+", ln)
+        ):
             cleaned_v = re.sub(r"^(?:to|paid to|from)\s*[:\-]?\s+", "", ln, flags=re.I).strip()
             vendor = (cleaned_v or ln)[:80]
             break

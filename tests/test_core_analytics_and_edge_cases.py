@@ -381,7 +381,13 @@ class TestAdditionalCoverageAndEnterpriseGuards:
         c = app.app.test_client()
         health = c.get("/health").get_json()
         assert health["status"] == "ok"
-        assert health["version"] == config.APP_VERSION == "1.3.7"
+        assert health["version"] == config.APP_VERSION == "1.3.8"
+
+        from analytics.report_generator import build_executive_pdf
+        import pandas as pd
+
+        empty_pdf = build_executive_pdf(pd.DataFrame(), currency="INR", user_name="EmptyTester")
+        assert empty_pdf.startswith(b"%PDF")
 
         c.post("/register", data={"name": "ViewTester", "email": "vt@example.com", "password": "strongpassword123"})
         c.post("/user/load-enterprise-sample")

@@ -22,6 +22,7 @@
     filterDepartment: "",
     activeTab: "overview",
     overviewMode: "combo",
+    modeOverride: "auto",
     segmentDim: "product",
     segmentMode: "margin",
     anomalyMode: "compare",
@@ -800,7 +801,9 @@
     if (nSample >= 10 && (revCount / nSample) >= 0.25) eScore += 15;
     if (posExp >= 5 && (microExp / posExp) >= 0.45) pScore += 12;
 
-    const isPersonal = (pScore > eScore) || (hasNeedWant && pScore >= 30);
+    let isPersonal = (pScore > eScore) || (hasNeedWant && pScore >= 30);
+    if (state.modeOverride === "personal") isPersonal = true;
+    else if (state.modeOverride === "enterprise") isPersonal = false;
     return {
       mode: isPersonal ? "personal" : "enterprise",
       label: isPersonal ? "Audit Mode: Personal & Household Ledger" : "Audit Mode: Corporate P&L",
@@ -809,6 +812,40 @@
       profitLabel: isPersonal ? "Net Surplus & Retained Cash" : "Operating Profit (EBITDA)",
       marginLabel: isPersonal ? "Savings & Retention Rate" : "Operating Margin %",
       roiLabel: isPersonal ? "Retained Savings" : "Return on investment"
+    };
+  }
+
+  function computeBudget503020(rows) {
+    if (!rows || !rows.length) return null;
+    let inflow = 0, investment = 0, needs = 0, wants = 0;
+    const needKws = ["housing", "rent", "mess", "groceries", "utility", "utilities", "electricity", "transport", "bus", "fuel", "education", "health", "healthcare", "medical", "laundry", "family"];
+    const wantKws = ["outing", "outings", "restaurant", "restaurants", "dining", "entertainment", "movie", "shopping", "tea", "snacks", "ott", "subscription", "lifestyle"];
+    rows.forEach((r) => {
+      inflow += Number(r.revenue) || 0;
+      investment += Number(r.investment) || 0;
+      const exp = Number(r.expense) || 0;
+      if (exp > 0) {
+        const seg = String(r.customer_segment || "").toLowerCase();
+        if (seg.includes("need")) needs += exp;
+        else if (seg.includes("want")) wants += exp;
+        else {
+          const txt = ((r.category || "") + " " + (r.subcategory || "") + " " + (r.notes || "")).toLowerCase();
+          if (wantKws.some((k) => txt.includes(k))) wants += exp;
+          else if (needKws.some((k) => txt.includes(k))) needs += exp;
+          else needs += exp;
+        }
+      }
+    });
+    const totalOut = needs + wants;
+    const base = Math.max(inflow, totalOut + Math.max(0, inflow - totalOut), 1);
+    const retained = Math.max(0, inflow - totalOut) + investment;
+    const nPct = round2((needs / base) * 100);
+    const wPct = round2((wants / base) * 100);
+    const sPct = round2(Math.max(0, 100 - nPct - wPct));
+    return {
+      needs: { amount: round2(needs), pct: nPct, status: nPct <= 50 ? "On Track" : "Over 50%" },
+      wants: { amount: round2(wants), pct: wPct, status: wPct <= 30 ? "Disciplined" : "Over 30%" },
+      savings: { amount: round2(retained), pct: sPct, status: sPct >= 20 ? "Healthy" : "Needs Boost" },
     };
   }
 
@@ -841,6 +878,17 @@
       kpiCard(persona.expenseLabel, fmtCurr(m.expenses), (m.expense_ratio === null ? "N/A" : fmtNum(m.expense_ratio, 1) + "%") + " ratio") +
       kpiCard(persona.profitLabel, fmtCurr(m.profit), (m.margin === null ? "N/A" : fmtNum(m.margin, 1) + "%") + " " + (persona.mode === "personal" ? "retained" : "margin"), m.profit >= 0 ? "pos" : "neg") +
       kpiCard(persona.roiLabel, persona.mode === "personal" ? fmtCurr(m.investment || 0) : (m.roi === null ? "N/A" : fmtNum(m.roi, 2) + "%"), persona.mode === "personal" ? "Dedicated RD/SIP" : "Gross " + fmtCurr(m.gross_profit));
+
+    const bStrip = document.getElementById("mobBudgetStrip");
+    if (bStrip) {
+      if (persona.mode === "personal") {
+        const br = computeBudget503020(rows);
+        bStrip.textContent = "50/30/20 Budget · Needs " + br.needs.pct + "% (" + br.needs.status + ") · Wants " + br.wants.pct + "% (" + br.wants.status + ") · Savings " + br.savings.pct + "% (" + br.savings.status + ")";
+        bStrip.classList.remove("hidden");
+      } else {
+        bStrip.classList.add("hidden");
+      }
+    }
 
     const rp = computeRiskProfile(rows);
     const rw = computeCashflowRunway(series);
@@ -1709,6 +1757,7 @@
 
   function parseReceiptText(rawText) {
     const text = String(rawText || "").trim();
+    const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     const low = text.toLowerCase();
     const res = {
       txn_date: new Date().toISOString().slice(0, 10),
@@ -1717,33 +1766,51 @@
       vendor: "",
       category: "Operations",
     };
-    const isoM = text.match(/\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b/);
-    const dmyM = text.match(/\b(\d{1,2})[-/](\d{1,2})[-/](20\d{2})\b/);
+    const isoM = text.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
+    const dmyM = text.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})\b/);
+    const dMonY = text.match(/\b(\d{1,2})[-/\s]+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-/\s,]+(20\d{2})\b/i);
+    const moMap = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
     if (isoM) {
       res.txn_date = isoM[1] + "-" + String(isoM[2]).padStart(2, "0") + "-" + String(isoM[3]).padStart(2, "0");
     } else if (dmyM) {
       res.txn_date = dmyM[3] + "-" + String(dmyM[2]).padStart(2, "0") + "-" + String(dmyM[1]).padStart(2, "0");
+    } else if (dMonY) {
+      res.txn_date = dMonY[3] + "-" + (moMap[dMonY[2].slice(0, 3).toLowerCase()] || "01") + "-" + String(dMonY[1]).padStart(2, "0");
     }
-    if (/\b(credited|received|salary|fee receipt|income|deposit|refund)\b/i.test(low)) {
+    if (/\b(credited to|payment received|salary credit|salary slip|payslip|net pay\b|deposit|refund)\b/i.test(low)) {
       res.flow = "income";
     }
-    const textNoDate = text
-      .replace(/\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b/g, " ")
-      .replace(/\b\d{1,2}[-/]\d{1,2}[-/]20\d{2}\b/g, " ");
-    const amtM = textNoDate.match(/(?:INR|Rs\.?|₹|\$|USD)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i)
-      || textNoDate.match(/(?:total|amount|amt|paid|bill|salary|received|debited|credited)\s*[:\-]?\s*([0-9]{1,3}(?:,[0-9]{2,3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/i)
-      || textNoDate.match(/\b([0-9]{1,3}(?:,[0-9]{2,3})+(?:\.[0-9]{1,2})?|[0-9]{3,}(?:\.[0-9]{1,2})?)\b/);
-    if (amtM) {
-      const v = Number(amtM[1].replace(/,/g, ""));
-      if (Number.isFinite(v) && v > 0) res.amount = String(round2(v));
-    }
-    const venM = text.match(/\b(?:to|from|at|vendor|merchant|payee)\s+([A-Za-z0-9&.\- ]{2,32}?)(?=\s+(?:on|for|via|inr|rs|₹|$)|\s*[,.;\n]|$)/i);
+    const excludedRe = /(sub\s*total|subtotal|total qty|total items|total savings|total discount|cash tendered|tendered|change due|balance change|pin\b|gstin|phone|tel\b|patient code|visit id|hsn)/i;
+    const priorityRe = /(grand total|net payable|amount payable|net amount|net total|total payable|invoice total|bill total|total amount|amount due|balance due|amount paid|total\b)/i;
+    let bestAmt = 0;
+    lines.forEach((ln) => {
+      if (excludedRe.test(ln)) return;
+      if (priorityRe.test(ln) || /(?:INR|Rs\.?|₹|\$)\s*[0-9]/i.test(ln)) {
+        const ms = ln.match(/(?:INR|Rs\.?|₹|\$|USD)?\s*([0-9]{1,3}(?:,[0-9]{2,3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)/gi) || [];
+        ms.forEach((tok) => {
+          const cleanTok = tok.replace(/[^0-9.,]/g, "");
+          const hasFmt = cleanTok.includes(".") || cleanTok.includes(",") || /(?:INR|Rs\.?|₹|\$|USD)/i.test(tok);
+          const v = Number(cleanTok.replace(/,/g, ""));
+          // Filter bare 6-digit PIN codes & huge reference IDs
+          if (!hasFmt && cleanTok.length >= 5) return;
+          if (Number.isFinite(v) && v > bestAmt && v <= 1e7) bestAmt = v;
+        });
+      }
+    });
+    if (bestAmt > 0) res.amount = String(round2(bestAmt));
+    const venM = text.match(/\b(?:to|paid to|from|at|vendor|merchant|payee)\s+([A-Za-z0-9&.\- ]{2,32}?)(?=\s+(?:on|for|via|inr|rs|₹|$)|\s*[,.;\n]|$)/i);
     if (venM) res.vendor = venM[1].trim();
-    if (/salary|payroll|wage/i.test(low)) res.category = "Payroll";
-    else if (/equipment|lab|software|cloud|server/i.test(low)) res.category = "Infrastructure";
-    else if (/tuition|fee|grant|consulting/i.test(low)) res.category = "Services";
-    else if (/travel|fuel|uber|flight|train/i.test(low)) res.category = "Travel";
-    else if (/power|electricity|water|internet|rent|utility/i.test(low)) res.category = "Utilities";
+    else if (lines.length && lines[0].length >= 3 && !/^(tax invoice|invoice|receipt|\d{1,2}:\d{2})/i.test(lines[0])) {
+      res.vendor = lines[0].replace(/^(?:to|paid to|from)\s*[:\-]?\s+/i, "").slice(0, 60);
+    }
+    if (/hospital|clinic|medical|pharmacy|doctor|patient|op bill|apollo|medplus/i.test(low)) res.category = "Healthcare";
+    else if (/restaurant|cafe|supermarket|dmart|mart|bhavan|mess|tiffin|swiggy|zomato|grocer|food/i.test(low)) res.category = "Groceries & Dining";
+    else if (/college|school|university|tuition|semester|exam fee/i.test(low)) res.category = "Education";
+    else if (/salary|payroll|wage|stipend/i.test(low)) res.category = "Payroll";
+    else if (/equipment|lab|software|cloud|server|aws|azure/i.test(low)) res.category = "Infrastructure";
+    else if (/travel|petrol|diesel|fuel|hpcl|bpcl|iocl|uber|flight|train|irctc/i.test(low)) res.category = "Travel";
+    else if (/power|electricity|water|internet|rent|utility|airtel|jio/i.test(low)) res.category = "Utilities";
+    else if (/google pay|phonepe|paytm|upi transaction id/i.test(low)) res.category = "UPI Transfer";
     return res;
   }
 
@@ -1883,12 +1950,61 @@
     const rp = computeRiskProfile(rows);
     const rw = computeCashflowRunway(series);
 
-    if (/(predict|forecast|projection|future|ethirkala|kanippu|bhavishya|कணிப்பு|கணிப்பு|भविष्य)/i.test(low)) {
+    if (/(50\/30\/20|50-30-20|50 30 20|budget rule|needs wants|needs and wants|பட்ஜெட்|बजट|budget status|how is my budget|budget)/i.test(low)) {
+      const br = computeBudget503020(rows);
+      return {
+        title: lang === "ta" ? "50/30/20 பட்ஜெட் தணிக்கை" : (lang === "hi" ? "50/30/20 बजट ऑडिट" : "50/30/20 Budget Health Audit"),
+        meta: "On-Device 50/30/20 Engine",
+        answer: "Needs " + br.needs.pct + "% (" + fmtCurr(br.needs.amount) + ", " + br.needs.status + "), Wants " + br.wants.pct + "% (" + fmtCurr(br.wants.amount) + ", " + br.wants.status + "), Savings " + br.savings.pct + "% (" + fmtCurr(br.savings.amount) + ", " + br.savings.status + ").",
+        metrics: [
+          { label: "Needs (≤50%)", value: br.needs.pct + "% · " + br.needs.status },
+          { label: "Wants (≤30%)", value: br.wants.pct + "% · " + br.wants.status },
+          { label: "Savings (≥20%)", value: br.savings.pct + "% · " + br.savings.status },
+          { label: "Retained Cash", value: fmtCurr(br.savings.amount) },
+        ],
+        actions: ["Cap non-essential Wants and direct monthly surplus toward >=20% Savings"],
+      };
+    }
+
+    if (/(loss|losses|deficit|shortfall|losing money|negative month|overspend|over budget|bleeding|நஷ்டம்|घाटा|नुकसान)/i.test(low)) {
+      const lossMos = series.filter((s) => s.profit < 0);
+      const totLoss = round2(lossMos.reduce((a, s) => a + Math.abs(s.profit), 0));
+      const catRows = byDimension(rows, "category").sort((a, b) => a.profit - b.profit);
+      const topDrain = catRows[0];
+      const drainMsg = topDrain ? " Largest expense drain: '" + topDrain.label + "' (" + fmtCurr(topDrain.profit) + ")." : "";
+      if (lossMos.length) {
+        const listStr = lossMos.map((s) => s.period + " (" + fmtCurr(s.profit) + ")").join(", ");
+        return {
+          title: "Loss & Deficit Audit",
+          meta: "On-Device Loss Analyzer",
+          answer: "Detected " + lossMos.length + " deficit/loss month(s) totaling " + fmtCurr(-totLoss) + ": " + listStr + "." + drainMsg,
+          metrics: [
+            { label: "Deficit Months", value: String(lossMos.length) },
+            { label: "Total Deficit", value: fmtCurr(-totLoss) },
+            { label: "Top Drain", value: topDrain ? topDrain.label.slice(0, 20) : "N/A" },
+            { label: "Net Surplus", value: fmtCurr(m.profit) },
+          ],
+          actions: [topDrain ? "Audit '" + topDrain.label + "' expenses to eliminate monthly deficits" : "Keep outflows below inflows"],
+        };
+      }
+      return {
+        title: "Loss & Deficit Audit",
+        meta: "On-Device Loss Analyzer",
+        answer: "Zero monthly net loss detected across " + fmtNum(rows.length) + " rows (cumulative surplus " + fmtCurr(m.profit) + ")." + drainMsg,
+        metrics: [
+          { label: "Deficit Months", value: "0" },
+          { label: "Net Surplus", value: fmtCurr(m.profit) },
+        ],
+        actions: ["Maintain current surplus discipline"],
+      };
+    }
+
+    if (/(predict|forecast|projection|future|will happen|going to happen|next month|next quarter|next year|ethirkala|kanippu|bhavishya|कணிப்பு|கணிப்பு|भविष्य)/i.test(low) || /\b(?:in|next|over)\s+\d{1,2}\s*(?:month|months|mo|माह|மாத)\b/i.test(low)) {
       const hM = low.match(/\b(\d{1,2})\s*(?:month|months|mo|माह|மாத)\b/);
       const horizon = hM ? Math.max(3, Math.min(24, Number(hM[1]))) : 6;
       const fc = computeForecast(series, horizon, state.forecastModel);
       if (!fc) {
-        return { title: "Forecast Unavailable", meta: "Offline Forecast", answer: "At least 4 distinct monthly periods are required.", metrics: [], actions: [] };
+        return { title: "Forecast Unavailable", meta: "Offline Forecast", answer: "At least 2 distinct monthly periods are required.", metrics: [], actions: [] };
       }
       const endRow = fc.future[fc.future.length - 1];
       const cumFc = round2(fc.future.reduce((a, r) => a + r.forecast, 0));
@@ -2011,8 +2127,8 @@
       };
     }
 
-    if (/(product|department|dept|region|category|segment|branch|course|विभाग)/i.test(low)) {
-      const dim = /(dept|department|course|unit|विभाग)/.test(low) ? "department" : (/(region|location|branch)/.test(low) ? "region" : (/categor/.test(low) ? "category" : "product"));
+    if (/(product|department|dept|region|category|segment|branch|course|विभाग|top spend|highest spend|highest expense|அதிக செலவு|सर्वाधिक खर्च)/i.test(low)) {
+      const dim = /(dept|department|course|unit|विभाग)/.test(low) ? "department" : (/(region|location|branch)/.test(low) ? "region" : (/(categor|spend|expense|செலவு|खर्च)/.test(low) ? "category" : "product"));
       const segs = byDimension(rows, dim);
       const top = segs[0], lowS = segs[segs.length - 1];
       return {
@@ -2048,7 +2164,7 @@
       };
     }
 
-    if (/(vendor|supplier|party|payment|upi|cheque|payee)/i.test(low)) {
+    if (/(vendor|supplier|party|payment|upi|cheque|payee|who is|who gets|highest paid|யார்|யாருக்கு|வணிகர்|किसे|व्यापारी)/i.test(low)) {
       const vMap = {};
       rows.forEach((r) => {
         if (r.expense > 0) {
@@ -2143,6 +2259,13 @@
   }
 
   function bindEvents() {
+    document.querySelectorAll("#mobWorkspaceModeBar .mode-btn").forEach((b) => b.addEventListener("click", () => {
+      state.modeOverride = b.dataset.wmode || "auto";
+      b.parentNode.querySelectorAll(".mode-btn").forEach((x) => x.classList.toggle("is-active", x === b));
+      renderOverview();
+      showNotice("Switched view to " + state.modeOverride.toUpperCase() + " mode.");
+    }));
+
     document.getElementById("brandHomeBtn").addEventListener("click", () => {
       if (state.view === "workspace") switchTab("overview");
       else openLanding();
@@ -2541,7 +2664,7 @@
         window.AndroidBridge.checkForUpdates();
       } else {
         setTimeout(() => {
-          if (box) box.textContent = "Version 1.2.0 · Direct update check runs inside the installed Android APK.";
+          if (box) box.textContent = "Version 1.3.8 · Direct update check runs inside the installed Android APK.";
         }, 120);
       }
     });
